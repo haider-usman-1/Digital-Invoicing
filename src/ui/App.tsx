@@ -4,6 +4,8 @@ import { NewInvoice } from "./NewInvoice.tsx";
 import { Settings } from "./Settings.tsx";
 import { Scenarios } from "./Scenarios.tsx";
 import { Attention } from "./Attention.tsx";
+import { loadPreference, savePreference } from "./theme.ts";
+import type { ThemePreference } from "./theme.ts";
 import type { Env } from "../core/types.ts";
 
 /** An account as the browser sees it: seller details, but never the tokens themselves. */
@@ -28,6 +30,7 @@ export function App() {
   const [accountId, setAccountId] = useState<string | null>(null);
   const [env, setEnv] = useState<Env>("sandbox");
   const [tab, setTab] = useState<Tab>("invoice");
+  const [theme, setTheme] = useState<ThemePreference>(() => loadPreference());
   const [attentionCount, setAttentionCount] = useState(0);
 
   const refreshAccounts = useCallback(async () => {
@@ -105,6 +108,14 @@ export function App() {
             <option value="production">Production</option>
           </select>
 
+          <ThemeControl
+            value={theme}
+            onChange={(next) => {
+              savePreference(next);
+              setTheme(next);
+            }}
+          />
+
           <button
             className="small"
             onClick={() => void api.post("/api/quit").then(() => window.close())}
@@ -125,6 +136,79 @@ export function App() {
         {tab === "settings" && <Settings accounts={accounts} onChanged={() => void refreshAccounts()} />}
       </div>
     </div>
+  );
+}
+
+/**
+ * Light / dark / follow-the-OS.
+ *
+ * Three options rather than a two-state switch: "follow the OS" is a real choice, and a toggle
+ * that only flips between light and dark silently throws it away the first time it is pressed.
+ */
+function ThemeControl({
+  value,
+  onChange,
+}: {
+  value: ThemePreference;
+  onChange: (next: ThemePreference) => void;
+}) {
+  const options: Array<{ id: ThemePreference; label: string; icon: React.ReactNode }> = [
+    { id: "system", label: "Match system theme", icon: <SystemIcon /> },
+    { id: "light", label: "Light theme", icon: <SunIcon /> },
+    { id: "dark", label: "Dark theme", icon: <MoonIcon /> },
+  ];
+
+  return (
+    <div className="segmented" role="group" aria-label="Theme">
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          title={option.label}
+          aria-label={option.label}
+          aria-pressed={value === option.id}
+          onClick={() => onChange(option.id)}
+        >
+          {option.icon}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SystemIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="1.5" y="2.5" width="13" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M5 14h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="3.1" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1M12.9 12.9l-1.1-1.1M4.2 4.2L3.1 3.1"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M13.5 9.6A5.8 5.8 0 0 1 6.4 2.5a5.8 5.8 0 1 0 7.1 7.1Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

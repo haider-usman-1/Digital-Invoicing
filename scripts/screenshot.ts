@@ -149,14 +149,16 @@ await waitForDevTools();
 const page = new Page();
 await page.open(`http://127.0.0.1:${appPort}/`);
 
-// Both palettes need checking, and the OS setting is not something a script should change.
-if (process.argv.includes("--light")) {
-  await page.send("Emulation.setEmulatedMedia", {
-    features: [{ name: "prefers-color-scheme", value: "light" }],
-  });
-}
-
 await Bun.sleep(2500);
+
+// Both palettes need checking. Driving the app's own control rather than emulating the OS setting,
+// because the palette is resolved in script now and an explicit choice is what users actually make.
+if (process.argv.includes("--light")) {
+  await page.evaluate(
+    `document.querySelector('[aria-label="Light theme"]')?.click()`,
+  );
+  await Bun.sleep(400);
+}
 
 for (const shot of SHOTS) {
   if (shot.tab) {

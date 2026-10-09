@@ -271,6 +271,50 @@ describe("HS code lookups", () => {
   });
 });
 
+describe("colour mode", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    delete document.documentElement.dataset.theme;
+  });
+
+  test("follows the system by default", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Invoice")).toBeTruthy());
+
+    expect((screen.getByLabelText("Match system theme") as HTMLButtonElement).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("an explicit choice overrides the system and is remembered", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Invoice")).toBeTruthy());
+
+    fireEvent.click(screen.getByLabelText("Light theme"));
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(localStorage.getItem("fbr-di:theme")).toBe("light");
+
+    fireEvent.click(screen.getByLabelText("Dark theme"));
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(localStorage.getItem("fbr-di:theme")).toBe("dark");
+  });
+
+  test("restores the stored preference on next launch", async () => {
+    localStorage.setItem("fbr-di:theme", "light");
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Invoice")).toBeTruthy());
+
+    expect((screen.getByLabelText("Light theme") as HTMLButtonElement).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("always resolves to a concrete palette, never an absent one", async () => {
+    // The stylesheet has two token blocks and no media query, so an unset attribute would leave
+    // the app on the dark defaults regardless of what the user picked.
+    const { initTheme } = await import("../src/ui/theme.ts");
+    localStorage.setItem("fbr-di:theme", "system");
+    initTheme();
+    expect(["light", "dark"]).toContain(document.documentElement.dataset.theme);
+  });
+});
+
 describe("submission feedback", () => {
   /**
    * The previous layout put the button at the bottom of a long form and its result at the top, so

@@ -10,9 +10,9 @@
  * having tokens: one set of components, two skins, no duplicated rules to drift apart.
  */
 
-:root {
-  /* Both are supported, so native controls and scrollbars follow the OS setting too. */
-  color-scheme: light dark;
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
 
   /* --- Surfaces -----------------------------------------------------------
    * Four steps, each a small tonal lift rather than a shadow. Deep charcoal, not pure black:
@@ -1049,51 +1049,101 @@ tbody tr:last-child td {
    ==========================================================================
    Warm and paper-like rather than white: a pure-white operational tool is tiring next to a dark
    one, and beige keeps the same tonal steps as the dark palette so every component rule above
-   still holds without modification. Only tokens change here. */
+   still holds without modification. Only tokens change here.
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #eeeae1;
-    --surface: #faf8f4;
-    --surface-2: #f3efe7;
-    --elevated: #e9e3d8;
+   Selected by attribute rather than by a media query, because the in-app control has to be able to
+   override the OS. theme.ts always writes an explicit value, so there is no third state to style
+   and no duplicated rules. */
 
-    --border: #e0d9cb;
-    --border-strong: #cec5b3;
-    --border-hover: #a79d89;
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #eeeae1;
+  --surface: #faf8f4;
+  --surface-2: #f3efe7;
+  --elevated: #e9e3d8;
 
-    --text: #23211d;
-    --text-2: #5e584e;
-    --text-3: #8a8275;
+  --border: #e0d9cb;
+  --border-strong: #cec5b3;
+  --border-hover: #a79d89;
 
-    --accent: #3a5fd0;
-    --accent-hover: #2f51ba;
-    --accent-text: #ffffff;
-    --accent-subtle: #dde4f8;
+  --text: #23211d;
+  --text-2: #5e584e;
+  --text-3: #8a8275;
 
-    --ok: #2f7d4a;
-    --ok-bg: #e2f0e4;
-    --ok-border: #a8cdb0;
-    --ok-text: #1d5733;
+  --accent: #3a5fd0;
+  --accent-hover: #2f51ba;
+  --accent-text: #ffffff;
+  --accent-subtle: #dde4f8;
 
-    --warn-bg: #f8eed6;
-    --warn-border: #d8bc7c;
-    --warn-text: #6d5212;
+  --ok: #2f7d4a;
+  --ok-bg: #e2f0e4;
+  --ok-border: #a8cdb0;
+  --ok-text: #1d5733;
 
-    --danger-bg: #fae3e0;
-    --danger-border: #dda9a3;
-    --danger-text: #8c2d26;
+  --warn-bg: #f8eed6;
+  --warn-border: #d8bc7c;
+  --warn-text: #6d5212;
 
-    --sandbox-fg: #6d5212;
-    --sandbox-bg: #f8eed6;
-    --sandbox-border: #d8bc7c;
-    --production-fg: #8c2d26;
-    --production-bg: #fae3e0;
-    --production-border: #dda9a3;
+  --danger-bg: #fae3e0;
+  --danger-border: #dda9a3;
+  --danger-text: #8c2d26;
 
-    --ring: 0 0 0 3px rgb(58 95 208 / 22%);
-    --overlay-bg: rgb(56 50 40 / 42%);
-    --shadow-bar: 0 4px 20px rgb(80 70 55 / 16%);
-    --shadow-dialog: 0 16px 44px rgb(80 70 55 / 24%);
-  }
+  --sandbox-fg: #6d5212;
+  --sandbox-bg: #f8eed6;
+  --sandbox-border: #d8bc7c;
+  --production-fg: #8c2d26;
+  --production-bg: #fae3e0;
+  --production-border: #dda9a3;
+
+  --ring: 0 0 0 3px rgb(58 95 208 / 22%);
+  --overlay-bg: rgb(56 50 40 / 42%);
+  --shadow-bar: 0 4px 20px rgb(80 70 55 / 16%);
+  --shadow-dialog: 0 16px 44px rgb(80 70 55 / 24%);
+}
+
+/* ==========================================================================
+   Theme control
+   ========================================================================== */
+
+/*
+ * A three-way segmented control rather than a two-state switch, because "follow the OS" is a
+ * distinct choice from picking a side and the app cannot represent it otherwise.
+ */
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+}
+
+.segmented button {
+  height: 24px;
+  width: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-3);
+}
+
+.segmented button:hover:not(:disabled) {
+  background: none;
+  border: none;
+  color: var(--text);
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--elevated);
+  color: var(--text);
+}
+
+.segmented button:focus-visible {
+  box-shadow: var(--ring);
+}
+
+.segmented svg {
+  display: block;
+  margin: 0 auto;
 }
