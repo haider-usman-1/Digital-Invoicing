@@ -552,3 +552,19 @@ tr:last-child td {
   text-align: center;
   color: var(--text-dim);
 }
+
+/*
+ * A figure the app worked out from the other side of a pair — value from unit price, or the
+ * reverse. Still editable: typing in it makes that side authoritative instead.
+ */
+input.derived {
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+input.derived:focus {
+  background: var(--surface);
+  color: var(--text);
+  font-style: normal;
+}

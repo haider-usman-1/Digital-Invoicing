@@ -21,10 +21,24 @@ import type { SaleTypeRate } from "./types.ts";
 
 export type RateKind = "percentage" | "compound" | "non-percentage";
 
+/**
+ * How the user drove the line's money.
+ *
+ * Both directions are first-class because both are how people actually work: some invoices are
+ * naturally "200 units at Rs. 125", others are "Rs. 25,000 of rice". Whichever the user typed is
+ * authoritative, and the other is derived for display only — never round-tripped. Back-solving a
+ * unit price from a value and recomputing would drift (25,000 over 3 units gives 8333.33, which
+ * recomputes to 24,999.99), and filing a paisa off what was typed is how FBR's own recalculation
+ * produces error 0104.
+ */
+export type LineAmount =
+  | { basis: "unitPrice"; unitPrice: number }
+  /** The sales value excluding tax, taken as already net of any discount. */
+  | { basis: "value"; valueSalesExcludingST: number };
+
 export interface LineInput {
   quantity: number;
-  /** Price per unit, excluding sales tax. */
-  unitPrice: number;
+  amount: LineAmount;
   /** Absolute discount on the line, not a percentage. */
   discount: number;
   /** The chosen row from the SaleTypeToRate reference endpoint. */
@@ -41,6 +55,11 @@ export interface LineInput {
 
 export interface ComputedLine {
   valueSalesExcludingST: number;
+  /**
+   * Unit price for the line: as entered when the user drove it that way, otherwise derived from
+   * the value. Display only — it is never sent to FBR, which has no such field.
+   */
+  unitPrice: number;
   salesTaxApplicable: number;
   totalValues: number;
   fixedNotifiedValueOrRetailPrice: number;
@@ -99,14 +118,33 @@ export function computeLine(input: LineInput): ComputedLine {
   const retailPrice = round2(Math.max(input.retailPrice ?? 0, 0));
 
   if (!(quantity > 0)) warnings.push("Quantity must be greater than zero.");
-  if (input.unitPrice < 0) warnings.push("The unit price can't be negative.");
   if (input.discount < 0) warnings.push("The discount can't be negative.");
 
-  const gross = round2(quantity * input.unitPrice);
-  let valueSalesExcludingST = round2(gross - discount);
-  if (valueSalesExcludingST < 0) {
-    warnings.push("The discount is larger than the line value, which would make the sale negative.");
-    valueSalesExcludingST = 0;
+  let valueSalesExcludingST: number;
+  let unitPrice: number;
+
+  if (input.amount.basis === "unitPrice") {
+    if (input.amount.unitPrice < 0) warnings.push("The unit price can't be negative.");
+
+    unitPrice = round2(input.amount.unitPrice);
+    valueSalesExcludingST = round2(round2(quantity * input.amount.unitPrice) - discount);
+
+    if (valueSalesExcludingST < 0) {
+      warnings.push("The discount is larger than the line value, which would make the sale negative.");
+      valueSalesExcludingST = 0;
+    }
+  } else {
+    if (input.amount.valueSalesExcludingST < 0) {
+      warnings.push("The value excluding sales tax can't be negative.");
+    }
+
+    // Taken exactly as typed. FBR models value and discount as separate fields, so the discount is
+    // reported alongside rather than deducted again.
+    valueSalesExcludingST = round2(Math.max(input.amount.valueSalesExcludingST, 0));
+    assumptions.push(
+      "The value you typed is treated as already net of discount, and the discount is reported to FBR in its own field.",
+    );
+    unitPrice = quantity > 0 ? round2(valueSalesExcludingST / quantity) : 0;
   }
 
   const rateKind = classifyRate(input.rate.ratE_DESC);
@@ -146,6 +184,7 @@ export function computeLine(input: LineInput): ComputedLine {
 
   return {
     valueSalesExcludingST,
+    unitPrice,
     salesTaxApplicable,
     // Mirrors FBR's samples rather than the field's name. See the assumption above.
     totalValues: 0,

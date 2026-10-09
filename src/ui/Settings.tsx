@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Children, cloneElement, isValidElement, useId, useState } from "react";
 import { api, currentSession } from "./api.ts";
 import { SCENARIOS } from "../core/scenarios.ts";
 import type { UiAccount } from "./App.tsx";
@@ -235,6 +235,23 @@ function AccountForm({
   );
 }
 
+/**
+ * Associates the label with the field's first control.
+ *
+ * Without this the label is just text sitting next to an input: clicking it does nothing and a
+ * screen reader never announces which input it belongs to. Targeting the first control is right for
+ * every field here — a trailing button (like "Check") or a `<datalist>` is never the thing being
+ * labelled.
+ */
+function withControlId(children: React.ReactNode, id: string): React.ReactNode {
+  let injected = false;
+  return Children.toArray(children).map((node) => {
+    if (injected || !isValidElement(node)) return node;
+    injected = true;
+    return cloneElement(node as React.ReactElement<{ id?: string }>, { id });
+  });
+}
+
 export function Field({
   label,
   hint,
@@ -244,10 +261,11 @@ export function Field({
   hint?: string | undefined;
   children: React.ReactNode;
 }) {
+  const id = useId();
   return (
     <div className="field">
-      <label>{label}</label>
-      {children}
+      <label htmlFor={id}>{label}</label>
+      {withControlId(children, id)}
       {hint && <span className="field-note">{hint}</span>}
     </div>
   );

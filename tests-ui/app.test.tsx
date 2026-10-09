@@ -141,6 +141,77 @@ describe("App", () => {
   });
 });
 
+describe("value and unit price are interchangeable", () => {
+  function amountFields() {
+    return {
+      value: screen.getByLabelText(/^Value excl\. sales tax$/) as HTMLInputElement,
+      unitPrice: screen.getByLabelText(/^Unit price/) as HTMLInputElement,
+      quantity: screen.getByLabelText(/^Quantity$/) as HTMLInputElement,
+    };
+  }
+
+  test("typing a value backfills the unit price", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Item 1")).toBeTruthy());
+
+    fireEvent.change(amountFields().quantity, { target: { value: "10" } });
+    fireEvent.change(amountFields().value, { target: { value: "25000" } });
+
+    await waitFor(() => expect(amountFields().unitPrice.value).toBe("2500.00"));
+    // What was typed stays exactly as typed.
+    expect(amountFields().value.value).toBe("25000");
+  });
+
+  test("typing a unit price fills in the value", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Item 1")).toBeTruthy());
+
+    fireEvent.change(amountFields().quantity, { target: { value: "4" } });
+    fireEvent.change(amountFields().unitPrice, { target: { value: "250" } });
+
+    await waitFor(() => expect(amountFields().value.value).toBe("1000.00"));
+  });
+
+  test("keeps the typed value intact when it doesn't divide evenly", async () => {
+    // The derived unit price is display only; filing 24999.99 instead of 25000 would earn FBR's
+    // error 0104 on its own recalculation.
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Item 1")).toBeTruthy());
+
+    fireEvent.change(amountFields().quantity, { target: { value: "3" } });
+    fireEvent.change(amountFields().value, { target: { value: "25000" } });
+
+    await waitFor(() => expect(amountFields().unitPrice.value).toBe("8333.33"));
+    expect(amountFields().value.value).toBe("25000");
+    expect(screen.getByText(/Value excl\. tax/)).toBeTruthy();
+  });
+
+  test("marks the derived side so it's clear which number the user owns", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Item 1")).toBeTruthy());
+
+    fireEvent.change(amountFields().value, { target: { value: "25000" } });
+    await waitFor(() => expect(amountFields().unitPrice.className).toContain("derived"));
+    expect(amountFields().value.className).not.toContain("derived");
+
+    // Switching direction swaps which one is marked.
+    fireEvent.change(amountFields().unitPrice, { target: { value: "500" } });
+    await waitFor(() => expect(amountFields().value.className).toContain("derived"));
+    expect(amountFields().unitPrice.className).not.toContain("derived");
+  });
+
+  test("no longer treats the value as an 'edited' override", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Item 1")).toBeTruthy());
+
+    fireEvent.change(amountFields().value, { target: { value: "25000" } });
+    await waitFor(() => expect(amountFields().value.value).toBe("25000"));
+
+    expect(amountFields().value.className).not.toContain("overridden");
+    expect(screen.queryByText(/Value excl\. sales tax · edited/)).toBeNull();
+  });
+});
+
 describe("screens", () => {
   async function openTab(label: string | RegExp) {
     render(<App />);

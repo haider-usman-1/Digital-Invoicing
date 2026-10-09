@@ -15,9 +15,13 @@ import type {
   UnitOfMeasure,
 } from "../core/types.ts";
 
-/** The amounts the user may override. Everything else is derived or typed directly. */
+/**
+ * The amounts the user may override.
+ *
+ * `valueSalesExcludingST` is deliberately NOT here: it is a primary input the user can type
+ * directly, so flagging it as "edited" would imply they were correcting a mistake.
+ */
 const OVERRIDABLE = [
-  "valueSalesExcludingST",
   "salesTaxApplicable",
   "totalValues",
   "furtherTax",
@@ -37,6 +41,10 @@ interface ItemDraft {
   uoM: string;
   quantity: string;
   unitPrice: string;
+  /** Sales value excluding tax, when the line is driven this way round. */
+  value: string;
+  /** Whichever of the two the user last typed in. That one is authoritative. */
+  amountBasis: "unitPrice" | "value";
   discount: string;
   retailPrice: string;
   overrides: Partial<Record<Overridable, string>>;
@@ -65,6 +73,8 @@ function blankItem(): ItemDraft {
     uoM: "",
     quantity: "1",
     unitPrice: "",
+    value: "",
+    amountBasis: "value",
     discount: "0",
     retailPrice: "",
     overrides: {},
@@ -208,7 +218,10 @@ export function NewInvoice({
 
         const base = computeLine({
           quantity: num(item.quantity),
-          unitPrice: num(item.unitPrice),
+          amount:
+            item.amountBasis === "unitPrice"
+              ? { basis: "unitPrice", unitPrice: num(item.unitPrice) }
+              : { basis: "value", valueSalesExcludingST: num(item.value) },
           discount: num(item.discount),
           rate,
           saleType: type?.transactioN_DESC ?? "",
@@ -632,8 +645,38 @@ function ItemCard({
           />
         </Field>
 
-        <Field label="Unit price (excl. tax)">
-          <input inputMode="decimal" value={item.unitPrice} onChange={(e) => onChange({ unitPrice: e.target.value })} />
+        {/*
+          * Value and unit price are interchangeable: type in either and that one becomes
+          * authoritative while the other shows as derived. The derived figure is display only, so
+          * a value that does not divide evenly by quantity is still filed exactly as typed.
+          */}
+        <Field
+          label="Value excl. sales tax"
+          hint={item.amountBasis === "unitPrice" ? "Quantity x unit price, less discount." : undefined}
+        >
+          <input
+            className={[
+              fieldErrors.has("valueSalesExcludingST") ? "invalid" : "",
+              item.amountBasis === "unitPrice" ? "derived" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            inputMode="decimal"
+            value={item.amountBasis === "value" ? item.value : computed.base.valueSalesExcludingST.toFixed(2)}
+            onChange={(e) => onChange({ value: e.target.value, amountBasis: "value" })}
+          />
+        </Field>
+
+        <Field
+          label="Unit price (excl. tax)"
+          hint={item.amountBasis === "value" ? "Worked back from the value; not sent to FBR." : undefined}
+        >
+          <input
+            className={item.amountBasis === "value" ? "derived" : undefined}
+            inputMode="decimal"
+            value={item.amountBasis === "unitPrice" ? item.unitPrice : computed.base.unitPrice.toFixed(2)}
+            onChange={(e) => onChange({ unitPrice: e.target.value, amountBasis: "unitPrice" })}
+          />
         </Field>
 
         <Field label="Discount">
@@ -653,14 +696,6 @@ function ItemCard({
       </div>
 
       <div className="grid">
-        <Amount
-          label="Value excl. sales tax"
-          field="valueSalesExcludingST"
-          item={item}
-          computed={computed}
-          onOverride={override}
-          invalid={fieldErrors.has("valueSalesExcludingST")}
-        />
         <Amount
           label="Sales tax"
           field="salesTaxApplicable"

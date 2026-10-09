@@ -57,7 +57,7 @@ describe("computeLine — the straightforward case", () => {
   test("computes value and tax for a standard-rate sale", () => {
     const result = computeLine({
       quantity: 10,
-      unitPrice: 100,
+      amount: { basis: "unitPrice", unitPrice: 100 },
       discount: 0,
       rate: STANDARD_18,
       saleType: STANDARD_SALE_TYPE,
@@ -72,7 +72,7 @@ describe("computeLine — the straightforward case", () => {
   test("passes FBR's rate description through verbatim rather than reformatting it", () => {
     const result = computeLine({
       quantity: 1,
-      unitPrice: 100,
+      amount: { basis: "unitPrice", unitPrice: 100 },
       discount: 0,
       rate: STANDARD_18,
       saleType: STANDARD_SALE_TYPE,
@@ -83,7 +83,7 @@ describe("computeLine — the straightforward case", () => {
   test("handles a zero-rated sale without flagging uncertainty", () => {
     const result = computeLine({
       quantity: 5,
-      unitPrice: 200,
+      amount: { basis: "unitPrice", unitPrice: 200 },
       discount: 0,
       rate: ZERO_RATE,
       saleType: "Goods at zero-rate",
@@ -99,7 +99,7 @@ describe("computeLine — the straightforward case", () => {
     // samples and record the choice as an assumption. Flagged for sandbox probing.
     const result = computeLine({
       quantity: 10,
-      unitPrice: 100,
+      amount: { basis: "unitPrice", unitPrice: 100 },
       discount: 0,
       rate: STANDARD_18,
       saleType: STANDARD_SALE_TYPE,
@@ -111,7 +111,7 @@ describe("computeLine — the straightforward case", () => {
   test("rounds tax to two decimals", () => {
     const result = computeLine({
       quantity: 1,
-      unitPrice: 1000.05,
+      amount: { basis: "unitPrice", unitPrice: 1000.05 },
       discount: 0,
       rate: STANDARD_18,
       saleType: STANDARD_SALE_TYPE,
@@ -126,7 +126,7 @@ describe("computeLine — discount", () => {
     // FBR does not document whether discount precedes tax. We pick one, name it, and verify.
     const result = computeLine({
       quantity: 10,
-      unitPrice: 100,
+      amount: { basis: "unitPrice", unitPrice: 100 },
       discount: 100,
       rate: STANDARD_18,
       saleType: STANDARD_SALE_TYPE,
@@ -139,7 +139,7 @@ describe("computeLine — discount", () => {
   test("warns rather than going negative when the discount exceeds the line value", () => {
     const result = computeLine({
       quantity: 1,
-      unitPrice: 100,
+      amount: { basis: "unitPrice", unitPrice: 100 },
       discount: 500,
       rate: STANDARD_18,
       saleType: STANDARD_SALE_TYPE,
@@ -149,11 +149,117 @@ describe("computeLine — discount", () => {
   });
 });
 
+describe("computeLine — driven by the total value instead of a unit price", () => {
+  test("uses the typed value as-is and derives the unit price", () => {
+    const result = computeLine({
+      quantity: 10,
+      amount: { basis: "value", valueSalesExcludingST: 25000 },
+      discount: 0,
+      rate: STANDARD_18,
+      saleType: STANDARD_SALE_TYPE,
+    });
+
+    expect(result.valueSalesExcludingST).toBe(25000);
+    expect(result.salesTaxApplicable).toBe(4500);
+    expect(result.unitPrice).toBe(2500);
+    expect(result.confidence).toBe("high");
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  test("files the typed value exactly, even when it doesn't divide evenly by quantity", () => {
+    // This is the whole reason the derived unit price is display-only. Back-solving 25000/3 to
+    // 8333.33 and recomputing would file 24999.99 — a paisa off what was typed, which is how you
+    // earn error 0104 from FBR's own recalculation.
+    const result = computeLine({
+      quantity: 3,
+      amount: { basis: "value", valueSalesExcludingST: 25000 },
+      discount: 0,
+      rate: STANDARD_18,
+      saleType: STANDARD_SALE_TYPE,
+    });
+
+    expect(result.valueSalesExcludingST).toBe(25000);
+    expect(result.unitPrice).toBe(8333.33);
+    expect(result.salesTaxApplicable).toBe(4500);
+  });
+
+  test("treats the typed value as already net of discount", () => {
+    // FBR models value and discount as separate fields, so what you type is what gets filed and
+    // the discount is reported alongside it rather than taken off again.
+    const result = computeLine({
+      quantity: 10,
+      amount: { basis: "value", valueSalesExcludingST: 25000 },
+      discount: 500,
+      rate: STANDARD_18,
+      saleType: STANDARD_SALE_TYPE,
+    });
+
+    expect(result.valueSalesExcludingST).toBe(25000);
+    expect(result.discount).toBe(500);
+    expect(result.salesTaxApplicable).toBe(4500);
+    expect(result.assumptions.join(" ")).toMatch(/net of|already/i);
+  });
+
+  test("still derives a unit price in the unit-price direction", () => {
+    const result = computeLine({
+      quantity: 4,
+      amount: { basis: "unitPrice", unitPrice: 250 },
+      discount: 0,
+      rate: STANDARD_18,
+      saleType: STANDARD_SALE_TYPE,
+    });
+
+    expect(result.valueSalesExcludingST).toBe(1000);
+    expect(result.unitPrice).toBe(250);
+  });
+
+  test("doesn't divide by zero when the quantity is empty", () => {
+    const result = computeLine({
+      quantity: 0,
+      amount: { basis: "value", valueSalesExcludingST: 25000 },
+      discount: 0,
+      rate: STANDARD_18,
+      saleType: STANDARD_SALE_TYPE,
+    });
+
+    expect(result.unitPrice).toBe(0);
+    expect(Number.isFinite(result.unitPrice)).toBe(true);
+    expect(result.warnings.join(" ")).toMatch(/quantity/i);
+  });
+
+  test("warns on a negative value rather than filing it", () => {
+    const result = computeLine({
+      quantity: 10,
+      amount: { basis: "value", valueSalesExcludingST: -500 },
+      discount: 0,
+      rate: STANDARD_18,
+      saleType: STANDARD_SALE_TYPE,
+    });
+
+    expect(result.valueSalesExcludingST).toBe(0);
+    expect(result.warnings.join(" ")).toMatch(/value/i);
+  });
+
+  test("still taxes 3rd Schedule goods on retail price, whichever way the line was entered", () => {
+    const result = computeLine({
+      quantity: 10,
+      amount: { basis: "value", valueSalesExcludingST: 25000 },
+      discount: 0,
+      rate: STANDARD_18,
+      saleType: "3rd Schedule Goods",
+      retailPrice: 150,
+    });
+
+    expect(result.valueSalesExcludingST).toBe(25000);
+    expect(result.salesTaxApplicable).toBe(270); // 150 retail x 10 units x 18%
+  });
+});
+
 describe("computeLine — rates it cannot fully compute", () => {
   test("flags a compound rate as low confidence and names the missing component", () => {
     const result = computeLine({
       quantity: 10,
-      unitPrice: 100,
+      amount: { basis: "unitPrice", unitPrice: 100 },
       discount: 0,
       rate: COMPOUND,
       saleType: STANDARD_SALE_TYPE,
@@ -168,7 +274,7 @@ describe("computeLine — rates it cannot fully compute", () => {
   test("flags a rate with no percentage at all and computes no tax", () => {
     const result = computeLine({
       quantity: 10,
-      unitPrice: 100,
+      amount: { basis: "unitPrice", unitPrice: 100 },
       discount: 0,
       rate: { ratE_ID: 9, ratE_DESC: "rupees 60 per kilogram", ratE_VALUE: 0 },
       saleType: STANDARD_SALE_TYPE,
@@ -185,7 +291,7 @@ describe("computeLine — 3rd Schedule goods", () => {
     // fixedNotifiedValueOrRetailPrice, not valueSalesExcludingST.
     const result = computeLine({
       quantity: 10,
-      unitPrice: 100,
+      amount: { basis: "unitPrice", unitPrice: 100 },
       discount: 0,
       rate: STANDARD_18,
       saleType: "3rd Schedule Goods",
@@ -200,7 +306,7 @@ describe("computeLine — 3rd Schedule goods", () => {
   test("warns when 3rd Schedule goods have no retail price entered", () => {
     const result = computeLine({
       quantity: 10,
-      unitPrice: 100,
+      amount: { basis: "unitPrice", unitPrice: 100 },
       discount: 0,
       rate: STANDARD_18,
       saleType: "3rd Schedule Goods",
@@ -216,7 +322,7 @@ describe("computeLine — fields that must never be inferred", () => {
     // from ratE_VALUE, so these are always explicit user input.
     const result = computeLine({
       quantity: 10,
-      unitPrice: 100,
+      amount: { basis: "unitPrice", unitPrice: 100 },
       discount: 0,
       rate: STANDARD_18,
       saleType: STANDARD_SALE_TYPE,
@@ -238,7 +344,7 @@ describe("computeLine — fields that must never be inferred", () => {
     // Error 0300 rejects malformed decimals, so these must be real zeros on the wire.
     const result = computeLine({
       quantity: 1,
-      unitPrice: 100,
+      amount: { basis: "unitPrice", unitPrice: 100 },
       discount: 0,
       rate: STANDARD_18,
       saleType: STANDARD_SALE_TYPE,
@@ -255,7 +361,7 @@ describe("computeLine — invalid input", () => {
   test("warns on a zero or negative quantity", () => {
     const result = computeLine({
       quantity: 0,
-      unitPrice: 100,
+      amount: { basis: "unitPrice", unitPrice: 100 },
       discount: 0,
       rate: STANDARD_18,
       saleType: STANDARD_SALE_TYPE,
@@ -266,7 +372,7 @@ describe("computeLine — invalid input", () => {
   test("warns on a negative unit price", () => {
     const result = computeLine({
       quantity: 1,
-      unitPrice: -5,
+      amount: { basis: "unitPrice", unitPrice: -5 },
       discount: 0,
       rate: STANDARD_18,
       saleType: STANDARD_SALE_TYPE,
