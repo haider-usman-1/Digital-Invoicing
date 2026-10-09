@@ -38,6 +38,8 @@ bun install
 bun run dev        # mock mode, no network, no token needed → http://127.0.0.1:7345
 bun test
 bun run typecheck
+bun scripts/screenshot.ts /tmp/shots [--light]   # capture every screen for visual review
+
 bun run build:win       # single Windows .exe, cross-compiled from macOS (no icon)
 bun run build:win:icon  # same, with icon and file properties — only runs ON Windows
 ```
@@ -69,7 +71,7 @@ src/core/      Pure, no I/O — the FBR rules that are expensive to get wrong
   scenario-templates.ts  ready-to-post defaults per scenario (unverified; see below)
   endpoints.ts   endpoint URLs, written out literally
 src/server/    Owns every FBR call; a token never reaches the browser
-src/ui/        React, three screens, one hand-written stylesheet
+src/ui/        React, four screens, one hand-written stylesheet driven by tokens
 tests/         Unit tests per core module, plus an end-to-end run against a real server
 ```
 

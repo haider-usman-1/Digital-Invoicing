@@ -1,77 +1,121 @@
 /*
  * One hand-written stylesheet, no framework.
  *
- * The app is three screens; a utility framework would add a bundler plugin to the single-exe
- * build for no real gain. Everything here is plain CSS with custom properties, which Bun's
- * bundler handles natively.
+ * Everything is driven by the tokens in :root. Components below compose those tokens — if you find
+ * yourself writing a raw colour or a one-off pixel value in a component, add a token instead, or
+ * the interface drifts apart one override at a time.
  *
- * Both colour schemes are supported because this runs in whatever browser the user has set up.
+ * Dark is the primary palette and the one the component rules are tuned against. The light palette
+ * at the bottom of this file overrides the same tokens and nothing else, which is the point of
+ * having tokens: one set of components, two skins, no duplicated rules to drift apart.
  */
 
 :root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --surface-2: #f1f3f6;
-  --border: #d9dde4;
-  --border-strong: #b9c0cb;
-  --text: #1a1f29;
-  --text-dim: #5b6472;
-  --accent: #1f5fd0;
-  --accent-text: #ffffff;
-  --ok-bg: #e7f6ec;
-  --ok-border: #86c99b;
-  --ok-text: #11502a;
-  --warn-bg: #fdf3e0;
-  --warn-border: #e2b25f;
-  --warn-text: #6b4409;
-  --error-bg: #fdecec;
-  --error-border: #e39a9a;
-  --error-text: #7a1d1d;
-  --sandbox: #9a6400;
-  --sandbox-bg: #fff4dc;
-  --production: #9f1d1d;
-  --production-bg: #fdeaea;
-  --radius: 10px;
-  --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 4px 12px rgb(16 24 40 / 5%);
-}
+  /* Both are supported, so native controls and scrollbars follow the OS setting too. */
+  color-scheme: light dark;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15181d;
-    --surface: #1d2127;
-    --surface-2: #24282f;
-    --border: #343a44;
-    --border-strong: #4a515d;
-    --text: #e7eaef;
-    --text-dim: #9aa4b2;
-    --accent: #5b92f0;
-    --accent-text: #0b1220;
-    --ok-bg: #16301f;
-    --ok-border: #2f6e45;
-    --ok-text: #a8e6bf;
-    --warn-bg: #332714;
-    --warn-border: #8a6a28;
-    --warn-text: #f3d79a;
-    --error-bg: #34191a;
-    --error-border: #7d3637;
-    --error-text: #f2b5b5;
-    --sandbox: #f0c472;
-    --sandbox-bg: #332714;
-    --production: #f09a9a;
-    --production-bg: #34191a;
-    --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 6px 16px rgb(0 0 0 / 25%);
-  }
+  /* --- Surfaces -----------------------------------------------------------
+   * Four steps, each a small tonal lift rather than a shadow. Deep charcoal, not pure black:
+   * black makes borders and text edges harsh, and leaves nowhere to go for depth. */
+  --bg: #0c0e12;
+  --surface: #121519;
+  --surface-2: #171a20;
+  --elevated: #1d2128;
+
+  --border: #23272f;
+  --border-strong: #30353e;
+  --border-hover: #434a55;
+
+  /* --- Text ---------------------------------------------------------------
+   * Three levels of emphasis is enough: content, supporting, incidental. */
+  --text: #e8eaee;
+  --text-2: #9aa2ae;
+  --text-3: #6a717d;
+
+  /* --- Accent -------------------------------------------------------------
+   * Primary actions, selection and links only. Drawn from the app icon so the product reads as
+   * one thing. */
+  --accent: #5a7fe8;
+  --accent-hover: #6b8df0;
+  --accent-text: #ffffff;
+  --accent-subtle: #1a2338;
+
+  /* --- Status -------------------------------------------------------------
+   * Meaning, never decoration. Each has a tinted surface, a border and a text tone, so a message
+   * sits on the page rather than shouting from it. */
+  --ok: #4ab06a;
+  --ok-bg: #11251a;
+  --ok-border: #255f3b;
+  --ok-text: #86dba4;
+
+  --warn-bg: #241c0d;
+  --warn-border: #5e4718;
+  --warn-text: #e9c478;
+
+  --danger-bg: #2a1416;
+  --danger-border: #6b2b2b;
+  --danger-text: #f4a09b;
+
+  /* --- Environment --------------------------------------------------------
+   * Deliberately the loudest thing in the interface. A production filing cannot be undone through
+   * the API, so which environment is active must never be in question. */
+  --sandbox-fg: #e9c478;
+  --sandbox-bg: #221a0b;
+  --sandbox-border: #5e4718;
+  --production-fg: #f4a09b;
+  --production-bg: #2a1214;
+  --production-border: #7a2f2f;
+
+  /* --- Spacing scale ------------------------------------------------------ */
+  --s1: 4px;
+  --s2: 6px;
+  --s3: 8px;
+  --s4: 12px;
+  --s5: 16px;
+  --s6: 20px;
+  --s7: 24px;
+  --s8: 32px;
+
+  /* --- Radii -------------------------------------------------------------- */
+  --r-sm: 5px;
+  --r-md: 7px;
+  --r-lg: 10px;
+
+  /* --- Type --------------------------------------------------------------- */
+  --font: ui-sans-serif, -apple-system, "Segoe UI", Inter, Roboto, system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --t-micro: 11.5px;
+  --t-meta: 12.5px;
+  --t-body: 13.5px;
+  --t-title: 15px;
+  --t-page: 19px;
+
+  --control-h: 32px;
+  --ring: 0 0 0 3px rgb(90 127 232 / 30%);
+
+  /* --- Depth --------------------------------------------------------------
+   * Tokenised because a shadow tuned for a dark surface reads as dirt on a light one. */
+  --overlay-bg: rgb(6 8 11 / 72%);
+  --shadow-bar: 0 4px 24px rgb(0 0 0 / 45%);
+  --shadow-dialog: 0 16px 48px rgb(0 0 0 / 55%);
 }
 
 * {
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
+  height: 100%;
+}
+
+body {
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font);
+  font-size: var(--t-body);
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -80,27 +124,34 @@ h2,
 h3 {
   margin: 0;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.012em;
+  color: var(--text);
 }
 
 h1 {
-  font-size: 1.1rem;
+  font-size: var(--t-page);
 }
 h2 {
-  font-size: 1rem;
+  font-size: var(--t-title);
 }
 h3 {
-  font-size: 0.9rem;
+  font-size: var(--t-body);
 }
 
 p {
   margin: 0;
 }
 
-/* --- Layout --------------------------------------------------------------- */
+::selection {
+  background: var(--accent-subtle);
+}
+
+/* ==========================================================================
+   Application shell
+   ========================================================================== */
 
 .app {
-  min-height: 100vh;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -108,33 +159,41 @@ p {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0.65rem 1.25rem;
+  gap: var(--s5);
+  height: 48px;
+  padding: 0 var(--s6);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
 .brand {
-  font-weight: 650;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  font-weight: 600;
   letter-spacing: -0.01em;
   white-space: nowrap;
 }
 
 .tabs {
   display: flex;
-  gap: 0.25rem;
-  margin-left: 0.5rem;
+  gap: var(--s1);
 }
 
 .tab {
-  padding: 0.35rem 0.7rem;
+  height: 28px;
+  padding: 0 var(--s4);
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   background: none;
-  color: var(--text-dim);
+  color: var(--text-2);
   font: inherit;
-  font-size: 0.9rem;
   cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .tab:hover {
@@ -143,8 +202,7 @@ p {
 }
 
 .tab[aria-current="page"] {
-  background: var(--surface-2);
-  border-color: var(--border);
+  background: var(--elevated);
   color: var(--text);
   font-weight: 550;
 }
@@ -153,52 +211,66 @@ p {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--s3);
 }
 
 .content {
   flex: 1;
   width: 100%;
-  max-width: 980px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 1.25rem;
+  padding: var(--s6) var(--s6) var(--s8);
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--s5);
 }
 
-/* --- Environment banner --------------------------------------------------- */
+/* What this screen is, plus its controls. */
+.page-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s4);
+}
 
-/*
- * Deliberately loud. Filing a real invoice by accident is not reversible through the API, so
- * which environment is active must never be in doubt.
- */
+.page-head .sub {
+  color: var(--text-2);
+  font-size: var(--t-meta);
+}
+
+.page-head .spacer {
+  margin-left: auto;
+}
+
+/* ==========================================================================
+   Environment banner
+   ========================================================================== */
+
 .env-banner {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.5rem 1.25rem;
-  font-size: 0.85rem;
+  gap: var(--s3);
+  padding: var(--s2) var(--s6);
+  font-size: var(--t-meta);
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   border-bottom: 1px solid;
 }
 
 .env-banner.sandbox {
   background: var(--sandbox-bg);
-  color: var(--sandbox);
-  border-color: var(--warn-border);
+  color: var(--sandbox-fg);
+  border-color: var(--sandbox-border);
 }
 
 .env-banner.production {
   background: var(--production-bg);
-  color: var(--production);
-  border-color: var(--error-border);
+  color: var(--production-fg);
+  border-color: var(--production-border);
 }
 
 .env-dot {
-  width: 9px;
-  height: 9px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: currentColor;
   flex: none;
@@ -208,59 +280,146 @@ p {
   margin-left: auto;
   font-weight: 450;
   letter-spacing: 0;
+  opacity: 0.85;
 }
 
-/* --- Cards and fields ----------------------------------------------------- */
+/* ==========================================================================
+   Panels
+   ========================================================================== */
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 1.1rem 1.25rem;
+  border-radius: var(--r-lg);
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
 }
 
+/* A panel's header strip, separated by a rule rather than a gap. */
 .card-head {
   display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s4) var(--s5);
+  border-bottom: 1px solid var(--border);
+  min-height: 44px;
+}
+
+.card-head h2,
+.card-head h3 {
+  font-size: var(--t-title);
 }
 
 .card-head .hint {
   margin-left: auto;
+  text-align: right;
+}
+
+.card-head .spacer {
+  margin-left: auto;
+}
+
+.card-body {
+  padding: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+
+.card-foot {
+  padding: var(--s4) var(--s5);
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
 }
 
 .hint {
-  color: var(--text-dim);
-  font-size: 0.82rem;
+  color: var(--text-2);
+  font-size: var(--t-meta);
+  font-weight: 400;
 }
 
+/* ==========================================================================
+   Forms
+   ========================================================================== */
+
+/*
+ * A real 12-column grid, not auto-fit.
+ *
+ * auto-fit with a minimum width produced a different column count per row, so fields landed at
+ * unrelated widths and the form looked accidental. Each field now declares its own span.
+ */
 .grid {
   display: grid;
-  gap: 0.8rem 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--s4);
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.28rem;
+  gap: var(--s2);
   min-width: 0;
+  grid-column: span 3;
+}
+
+.field.col-2 {
+  grid-column: span 2;
+}
+.field.col-4 {
+  grid-column: span 4;
+}
+.field.col-6 {
+  grid-column: span 6;
+}
+.field.wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 960px) {
+  .field,
+  .field.col-2,
+  .field.col-4 {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 620px) {
+  .field,
+  .field.col-2,
+  .field.col-4,
+  .field.col-6 {
+    grid-column: 1 / -1;
+  }
 }
 
 .field > label {
-  font-size: 0.8rem;
-  font-weight: 550;
-  color: var(--text-dim);
+  font-size: var(--t-meta);
+  font-weight: 500;
+  color: var(--text-2);
+  line-height: 1.3;
 }
 
 .field-note {
-  font-size: 0.76rem;
-  color: var(--text-dim);
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  line-height: 1.4;
 }
+
+/* An input with a button beside it, e.g. the buyer lookup. */
+.field-row {
+  display: flex;
+  gap: var(--s2);
+}
+
+.field-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ==========================================================================
+   Controls
+   ========================================================================== */
 
 input,
 select,
@@ -273,52 +432,130 @@ button {
 input,
 select,
 textarea {
-  padding: 0.45rem 0.55rem;
-  background: var(--surface);
+  height: var(--control-h);
+  padding: 0 var(--s3);
+  background: var(--surface-2);
   border: 1px solid var(--border-strong);
-  border-radius: 7px;
+  border-radius: var(--r-md);
+  color: var(--text);
   min-width: 0;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
 }
 
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+textarea {
+  height: auto;
+  padding: var(--s3);
+  line-height: 1.5;
+}
+
+input::placeholder {
+  color: var(--text-3);
+}
+
+input:hover:not(:disabled):not([readonly]),
+select:hover:not(:disabled),
+textarea:hover:not(:disabled) {
+  border-color: var(--border-hover);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+  background: var(--surface);
+}
+
+input[type="checkbox"] {
+  height: auto;
+  accent-color: var(--accent);
 }
 
 input[readonly] {
-  background: var(--surface-2);
-  color: var(--text-dim);
+  background: var(--surface);
+  color: var(--text-2);
 }
 
+input:disabled,
+select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+select {
+  appearance: none;
+  padding-right: var(--s7);
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-2) 50%),
+    linear-gradient(135deg, var(--text-2) 50%, transparent 50%);
+  background-position: calc(100% - 15px) calc(50% + 1px), calc(100% - 10px) calc(50% + 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+/*
+ * A figure the app worked out from the other side of a pair — value from unit price, or the
+ * reverse. Dashed, so it is obvious which number the user owns. Still editable: typing in it makes
+ * that side authoritative instead.
+ */
+input.derived {
+  background: var(--surface);
+  color: var(--text-2);
+  border-style: dashed;
+}
+
+input.derived:focus {
+  background: var(--surface-2);
+  color: var(--text);
+  border-style: solid;
+}
+
+/* A computed amount the user has taken over. */
 input.overridden {
   border-color: var(--warn-border);
   background: var(--warn-bg);
+  color: var(--warn-text);
 }
 
 .invalid {
-  border-color: var(--error-border) !important;
-  background: var(--error-bg);
+  border-color: var(--danger-border) !important;
+  background: var(--danger-bg) !important;
 }
 
-/* --- Buttons -------------------------------------------------------------- */
+/* ==========================================================================
+   Buttons
+   ========================================================================== */
 
 button {
-  padding: 0.45rem 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  height: var(--control-h);
+  padding: 0 var(--s4);
   border: 1px solid var(--border-strong);
-  border-radius: 7px;
-  background: var(--surface);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 500;
   cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
 button:hover:not(:disabled) {
-  background: var(--surface-2);
+  background: var(--elevated);
+  border-color: var(--border-hover);
+}
+
+button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -330,31 +567,45 @@ button.primary {
 }
 
 button.primary:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 button.danger {
-  color: var(--error-text);
-  border-color: var(--error-border);
+  color: var(--danger-text);
+}
+
+button.danger:hover:not(:disabled) {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
 }
 
 button.link {
+  height: auto;
+  padding: 0;
   border: none;
   background: none;
-  padding: 0;
   color: var(--accent);
+  font-weight: 450;
+}
+
+button.link:hover:not(:disabled) {
+  background: none;
+  border: none;
+  color: var(--accent-hover);
   text-decoration: underline;
 }
 
 button.small {
-  padding: 0.25rem 0.55rem;
-  font-size: 0.85rem;
+  height: 26px;
+  padding: 0 var(--s3);
+  font-size: var(--t-meta);
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--s3);
   flex-wrap: wrap;
 }
 
@@ -362,16 +613,22 @@ button.small {
   margin-left: auto;
 }
 
-/* --- Messages ------------------------------------------------------------- */
+/* ==========================================================================
+   Messages
+   ========================================================================== */
 
 .note {
-  padding: 0.7rem 0.85rem;
+  padding: var(--s4);
   border: 1px solid;
-  border-radius: 8px;
-  font-size: 0.88rem;
+  border-radius: var(--r-md);
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: var(--s2);
+  line-height: 1.5;
+}
+
+.note strong {
+  font-weight: 600;
 }
 
 .note.ok {
@@ -387,114 +644,183 @@ button.small {
 }
 
 .note.error {
-  background: var(--error-bg);
-  border-color: var(--error-border);
-  color: var(--error-text);
-}
-
-.note strong {
-  font-weight: 650;
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger-text);
 }
 
 .note ul {
-  margin: 0;
-  padding-left: 1.1rem;
+  margin: var(--s1) 0 0;
+  padding-left: var(--s5);
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: var(--s2);
 }
 
 .irn {
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 1.05rem;
+  font-family: var(--mono);
+  font-size: var(--t-title);
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
   word-break: break-all;
+  color: var(--text);
 }
 
-/* --- Line items ----------------------------------------------------------- */
+/* ==========================================================================
+   Line items
+   ========================================================================== */
 
 .item {
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: var(--surface-2);
-  padding: 0.9rem 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
 }
 
 .item-head {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  font-size: 0.85rem;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--t-meta);
   font-weight: 600;
-  color: var(--text-dim);
+  color: var(--text-2);
 }
 
 .item-head .spacer {
   margin-left: auto;
 }
 
+.item-body {
+  padding: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+/* Separates computed amounts from the identifying fields above them. */
+.item-amounts {
+  padding-top: var(--s4);
+  border-top: 1px dashed var(--border);
+}
+
+/* ==========================================================================
+   Totals and the sticky action bar
+   ========================================================================== */
+
+/*
+ * The submit controls follow the user down a long form.
+ *
+ * The button used to sit at the very bottom while its result appeared at the very top, so after
+ * clicking you could not tell whether anything had happened without scrolling — which is how a
+ * second click, and a duplicate filing, happens.
+ */
+.action-bar {
+  position: sticky;
+  bottom: var(--s5);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+  padding: var(--s4) var(--s5);
+  background: var(--elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-bar);
+}
+
+.action-bar .actions {
+  margin-left: auto;
+}
+
 .totals {
   display: flex;
-  gap: 1.5rem;
+  gap: var(--s6);
   flex-wrap: wrap;
-  padding-top: 0.2rem;
-  font-size: 0.9rem;
 }
 
 .totals div {
   display: flex;
   flex-direction: column;
+  gap: 1px;
 }
 
 .totals span:first-child {
-  font-size: 0.78rem;
-  color: var(--text-dim);
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .totals span:last-child {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  font-size: var(--t-title);
 }
 
-/* --- Tables and lists ----------------------------------------------------- */
+/* ==========================================================================
+   Tables
+   ========================================================================== */
 
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.88rem;
 }
 
 th,
 td {
   text-align: left;
-  padding: 0.5rem 0.6rem;
+  padding: var(--s3) var(--s4);
   border-bottom: 1px solid var(--border);
-  vertical-align: top;
+  vertical-align: middle;
 }
 
-th {
-  font-size: 0.78rem;
+thead th {
+  font-size: var(--t-micro);
   font-weight: 600;
-  color: var(--text-dim);
+  color: var(--text-3);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.05em;
+  background: var(--surface-2);
+  white-space: nowrap;
 }
 
-tr:last-child td {
+tbody tr:hover {
+  background: var(--surface-2);
+}
+
+tbody tr:last-child td {
   border-bottom: none;
 }
 
+/* A table filling a panel sits flush against its edges. */
+.card > table thead th:first-child,
+.card > table tbody td:first-child {
+  padding-left: var(--s5);
+}
+
+.card > table thead th:last-child,
+.card > table tbody td:last-child {
+  padding-right: var(--s5);
+}
+
+.card > table:last-child tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ==========================================================================
+   Badges, progress, misc
+   ========================================================================== */
+
 .pill {
-  display: inline-block;
-  padding: 0.1rem 0.45rem;
-  border-radius: 999px;
-  font-size: 0.74rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--s2);
+  border-radius: var(--r-sm);
+  font-size: var(--t-micro);
   font-weight: 600;
   border: 1px solid;
+  white-space: nowrap;
 }
 
 .pill.done {
@@ -506,13 +832,13 @@ tr:last-child td {
 .pill.todo {
   background: var(--surface-2);
   border-color: var(--border-strong);
-  color: var(--text-dim);
+  color: var(--text-3);
 }
 
 .pill.bad {
-  background: var(--error-bg);
-  border-color: var(--error-border);
-  color: var(--error-text);
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger-text);
 }
 
 .pill.unsure {
@@ -522,7 +848,7 @@ tr:last-child td {
 }
 
 .progress {
-  height: 7px;
+  height: 5px;
   border-radius: 999px;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -531,49 +857,243 @@ tr:last-child td {
 
 .progress > div {
   height: 100%;
-  background: var(--ok-border);
+  background: var(--ok);
+  transition: width 0.3s ease;
 }
 
 .empty {
-  padding: 1.5rem;
+  padding: var(--s8) var(--s5);
   text-align: center;
-  color: var(--text-dim);
-  font-size: 0.9rem;
+  color: var(--text-3);
 }
 
 .mono {
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 0.85rem;
+  font-family: var(--mono);
+  font-size: var(--t-meta);
   word-break: break-all;
+  color: var(--text-2);
 }
 
 .loading {
-  padding: 3rem;
+  padding: var(--s8);
   text-align: center;
-  color: var(--text-dim);
+  color: var(--text-3);
 }
 
-/*
- * A figure the app worked out from the other side of a pair — value from unit price, or the
- * reverse. Still editable: typing in it makes that side authoritative instead.
- */
-input.derived {
-  background: var(--surface-2);
-  color: var(--text-dim);
-  font-style: italic;
+/* Checkbox lists, e.g. the eligible scenario picker. */
+.check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: var(--s1) var(--s5);
 }
 
-input.derived:focus {
-  background: var(--surface);
+.check {
+  display: flex;
+  gap: var(--s3);
+  align-items: baseline;
+  font-size: var(--t-meta);
+  color: var(--text-2);
+  padding: var(--s1) 0;
+  cursor: pointer;
+}
+
+.check:hover {
   color: var(--text);
-  font-style: normal;
 }
 
+.check input {
+  width: auto;
+  min-width: 0;
+  flex: none;
+}
+
+.check strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Dialog
+   ========================================================================== */
+
 /*
- * Fields holding free text that is routinely long — business names, addresses, product
- * descriptions. The grid gives every track the same width, which leaves a 60-character address in
- * the same box as a quantity, so these take the whole row instead.
+ * Used for submission results.
+ *
+ * Modal on purpose: while a filing is in flight the overlay absorbs clicks, which removes the
+ * "did that register?" moment that leads to pressing submit twice. FBR has no idempotency key, so
+ * a duplicate filing is expensive to undo.
  */
-.field.wide {
-  grid-column: 1 / -1;
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s6);
+  background: var(--overlay-bg);
+  animation: overlay-in 0.12s ease;
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.dialog {
+  width: min(560px, 100%);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-dialog);
+  animation: dialog-in 0.14s ease;
+}
+
+/* Focused programmatically so screen readers land inside it; that is not a visible affordance. */
+.dialog:focus {
+  outline: none;
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s5) var(--s6);
+  border-bottom: 1px solid var(--border);
+}
+
+.dialog-body {
+  padding: var(--s6);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.dialog-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s4) var(--s6);
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+}
+
+.dialog-foot .spacer {
+  margin-left: auto;
+}
+
+.detail-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--s2) var(--s5);
+  margin: 0;
+  padding: var(--s4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+.detail-list dt {
+  font-size: var(--t-meta);
+  color: var(--text-3);
+}
+
+.detail-list dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  color: var(--text);
+  word-break: break-all;
+}
+
+.spinner {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ==========================================================================
+   Light palette
+   ==========================================================================
+   Warm and paper-like rather than white: a pure-white operational tool is tiring next to a dark
+   one, and beige keeps the same tonal steps as the dark palette so every component rule above
+   still holds without modification. Only tokens change here. */
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #eeeae1;
+    --surface: #faf8f4;
+    --surface-2: #f3efe7;
+    --elevated: #e9e3d8;
+
+    --border: #e0d9cb;
+    --border-strong: #cec5b3;
+    --border-hover: #a79d89;
+
+    --text: #23211d;
+    --text-2: #5e584e;
+    --text-3: #8a8275;
+
+    --accent: #3a5fd0;
+    --accent-hover: #2f51ba;
+    --accent-text: #ffffff;
+    --accent-subtle: #dde4f8;
+
+    --ok: #2f7d4a;
+    --ok-bg: #e2f0e4;
+    --ok-border: #a8cdb0;
+    --ok-text: #1d5733;
+
+    --warn-bg: #f8eed6;
+    --warn-border: #d8bc7c;
+    --warn-text: #6d5212;
+
+    --danger-bg: #fae3e0;
+    --danger-border: #dda9a3;
+    --danger-text: #8c2d26;
+
+    --sandbox-fg: #6d5212;
+    --sandbox-bg: #f8eed6;
+    --sandbox-border: #d8bc7c;
+    --production-fg: #8c2d26;
+    --production-bg: #fae3e0;
+    --production-border: #dda9a3;
+
+    --ring: 0 0 0 3px rgb(58 95 208 / 22%);
+    --overlay-bg: rgb(56 50 40 / 42%);
+    --shadow-bar: 0 4px 20px rgb(80 70 55 / 16%);
+    --shadow-dialog: 0 16px 44px rgb(80 70 55 / 24%);
+  }
 }

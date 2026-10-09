@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api.ts";
+import { Field } from "./Settings.tsx";
+
+/** The portal-search keys come from the server as field names; nobody should have to read those. */
+const SEARCH_LABELS: Record<string, string> = {
+  invoiceDate: "Invoice date",
+  buyerName: "Buyer name",
+  buyerNTNCNIC: "Buyer NTN / CNIC",
+  totalExcludingTax: "Total excluding tax",
+  sellerNTNCNIC: "Seller NTN / CNIC",
+};
 
 interface PendingSubmission {
   id: string;
@@ -101,60 +111,66 @@ function PendingCard({ item, onResolved }: { item: PendingSubmission; onResolved
   return (
     <div className="card">
       <div className="card-head">
-        <h3>
-          {item.internalInvoiceNumber || "(no invoice number)"} — {item.accountLabel}
-        </h3>
+        <h3>{item.internalInvoiceNumber || "(no invoice number)"}</h3>
         <span className={`pill ${item.status === "pending" ? "unsure" : "bad"}`}>
           {item.status === "pending" ? "stopped mid-submission" : "no answer from FBR"}
         </span>
+        <span className="spacer" />
         <span className="hint">
-          {item.env} · {new Date(item.at).toLocaleString()}
+          {item.accountLabel} · {item.env} · {new Date(item.at).toLocaleString()}
         </span>
       </div>
 
-      {item.reason && <p className="hint">{item.reason}</p>}
-      {item.status === "pending" && (
-        <p className="hint">
-          The app recorded the attempt but never recorded a reply, so it was interrupted part way
-          through.
-        </p>
-      )}
+      <div className="card-body">
+        {item.reason && <p className="hint">{item.reason}</p>}
+        {item.status === "pending" && (
+          <p className="hint">
+            The app recorded the attempt but never recorded a reply, so it was interrupted part way
+            through.
+          </p>
+        )}
 
-      <div className="field">
-        <label>Search for this in IRIS using</label>
-        <table>
-          <tbody>
+        <div className="field">
+          <label>Search for this in IRIS using</label>
+          <dl className="detail-list">
             {Object.entries(item.portalSearch).map(([key, value]) => (
-              <tr key={key}>
-                <td className="hint">{key}</td>
-                <td className="mono">{String(value)}</td>
-              </tr>
+              <div key={key} style={{ display: "contents" }}>
+                <dt>{SEARCH_LABELS[key] ?? key}</dt>
+                <dd>{String(value)}</dd>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </dl>
+        </div>
+
+        {error && <div className="note error">{error}</div>}
+
+        <div className="grid">
+          <Field
+            label="FBR invoice number, if you found it"
+            span={6}
+            hint="Recording it here marks this as filed and clears the warning."
+          >
+            <input value={irn} onChange={(e) => setIrn(e.target.value)} placeholder="0786909DI1CFGJK395794" />
+          </Field>
+          <Field label="Note" span={6}>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Found in IRIS, invoice was filed"
+            />
+          </Field>
+        </div>
       </div>
 
-      {error && <div className="note error">{error}</div>}
-
-      <div className="grid">
-        <div className="field">
-          <label>FBR invoice number, if you found it</label>
-          <input value={irn} onChange={(e) => setIrn(e.target.value)} placeholder="0786909DI1747119701593" />
-          <span className="field-note">Recording it here marks this as filed and clears the warning.</span>
+      <div className="card-foot">
+        <div className="actions">
+          <button className="primary" onClick={() => void resolve()} disabled={saving || !irn.trim()}>
+            {saving ? "Saving…" : "Mark as filed"}
+          </button>
+          <span className="hint">
+            If IRIS has no such invoice, it wasn't filed — submit it again from the New invoice screen.
+          </span>
         </div>
-        <div className="field">
-          <label>Note</label>
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Found in IRIS, invoice was filed" />
-        </div>
-      </div>
-
-      <div className="actions">
-        <button className="primary" onClick={() => void resolve()} disabled={saving || !irn.trim()}>
-          {saving ? "Saving…" : "Mark as filed"}
-        </button>
-        <span className="hint">
-          If IRIS has no such invoice, it wasn't filed — submit it again from the New invoice screen.
-        </span>
       </div>
     </div>
   );

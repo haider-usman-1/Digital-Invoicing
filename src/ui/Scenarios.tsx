@@ -67,11 +67,11 @@ export function Scenarios({ account, env }: { account: UiAccount | null; env: En
 
       <div className="card">
         <div className="card-head">
-          <h2>Scenario testing — {account.label}</h2>
+          <h2>Scenario testing</h2>
+          <span className="hint">{account.label}</span>
+          <span className="spacer" />
           <span className="hint">
-            {scenarios.length === 0
-              ? "No eligible scenarios listed"
-              : `${done} of ${scenarios.length} passed`}
+            {scenarios.length === 0 ? "No eligible scenarios listed" : `${done} of ${scenarios.length} passed`}
           </span>
         </div>
 
@@ -82,25 +82,27 @@ export function Scenarios({ account, env }: { account: UiAccount | null; env: En
           </div>
         ) : (
           <>
-            <div className="progress">
-              <div style={{ width: `${(done / scenarios.length) * 100}%` }} />
-            </div>
-
-            {allDone ? (
-              <div className="note ok">
-                <strong>All eligible scenarios passed</strong>
-                <span>
-                  FBR generates the production token automatically. Collect it from IRIS →
-                  Production Environment → View Security Token, then paste it into Settings.
-                </span>
+            <div className="card-body">
+              <div className="progress">
+                <div style={{ width: `${(done / scenarios.length) * 100}%` }} />
               </div>
-            ) : (
-              <p className="hint">
-                Each scenario needs one successfully filed sandbox invoice. Starting one opens a
-                fully prefilled form — adjust anything FBR objects to, then save it back so the next
-                account starts from the corrected version.
-              </p>
-            )}
+
+              {allDone ? (
+                <div className="note ok">
+                  <strong>All eligible scenarios passed</strong>
+                  <span>
+                    FBR generates the production token automatically. Collect it from IRIS →
+                    Production Environment → View Security Token, then paste it into Settings.
+                  </span>
+                </div>
+              ) : (
+                <p className="hint">
+                  Each scenario needs one successfully filed sandbox invoice. Starting one opens a
+                  fully prefilled form — adjust anything FBR objects to, then save it back so the
+                  next account starts from the corrected version.
+                </p>
+              )}
+            </div>
 
             <table>
               <thead>
@@ -117,20 +119,22 @@ export function Scenarios({ account, env }: { account: UiAccount | null; env: En
                   <tr key={scenario.id}>
                     <td>
                       <strong>{scenario.id}</strong>
-                      <br />
-                      <span className="hint">{scenario.description}</span>
+                      <div className="hint">{scenario.description}</div>
                     </td>
-                    <td>{scenario.saleType}</td>
-                    <td>{scenario.expectedBuyerRegistrationType}</td>
+                    <td className="hint">{scenario.saleType}</td>
+                    <td className="hint">{scenario.expectedBuyerRegistrationType}</td>
                     <td>
                       <span className={`pill ${scenario.completed ? "done" : "todo"}`}>
                         {scenario.completed ? "passed" : "not yet"}
                       </span>
                     </td>
                     <td>
-                      <button className="small" onClick={() => setActive(scenario.id)}>
-                        {scenario.completed ? "Run again" : "Start"}
-                      </button>
+                      <div className="actions">
+                        <span className="spacer" />
+                        <button className="small" onClick={() => setActive(scenario.id)}>
+                          {scenario.completed ? "Run again" : "Start"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -142,10 +146,11 @@ export function Scenarios({ account, env }: { account: UiAccount | null; env: En
 
       {active && (
         <>
-          <div className="card-head">
-            <h2>Scenario {active}</h2>
-            <button className="link" onClick={() => setActive(null)}>
-              close
+          <div className="page-head">
+            <h1>Scenario {active}</h1>
+            <span className="spacer" />
+            <button className="small" onClick={() => setActive(null)}>
+              Close
             </button>
           </div>
           {/* Remount on scenario change so the form prefills cleanly rather than merging state. */}

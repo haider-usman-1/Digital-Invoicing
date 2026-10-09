@@ -76,7 +76,10 @@ export function App() {
   return (
     <div className="app">
       <div className="topbar">
-        <span className="brand">FBR Invoicing</span>
+        <span className="brand">
+          <BrandMark />
+          FBR Invoicing
+        </span>
 
         <nav className="tabs">
           <Tabs tab={tab} setTab={setTab} attentionCount={attentionCount} />
@@ -102,7 +105,10 @@ export function App() {
             <option value="production">Production</option>
           </select>
 
-          <button className="small" onClick={() => void api.post("/api/quit").then(() => window.close())}>
+          <button
+            className="small"
+            onClick={() => void api.post("/api/quit").then(() => window.close())}
+          >
             Quit
           </button>
         </div>
@@ -122,6 +128,29 @@ export function App() {
   );
 }
 
+/** The app mark, inline so the shell has no asset dependency to resolve at runtime. */
+function BrandMark() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 512 512" aria-hidden="true">
+      <defs>
+        <linearGradient id="brandAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#38bdf8" />
+          <stop offset="100%" stopColor="#818cf8" />
+        </linearGradient>
+      </defs>
+      <rect width="512" height="512" rx="128" fill="#131821" />
+      <polygon
+        points="256,96 384,170 384,318 256,392 128,318 128,170"
+        fill="none"
+        stroke="url(#brandAccent)"
+        strokeWidth="38"
+        strokeLinejoin="round"
+      />
+      <circle cx="256" cy="244" r="44" fill="url(#brandAccent)" />
+    </svg>
+  );
+}
+
 function Tabs({
   tab,
   setTab,
@@ -131,10 +160,11 @@ function Tabs({
   setTab: (t: Tab) => void;
   attentionCount: number;
 }) {
-  const items: Array<{ id: Tab; label: string }> = [
+  const items: Array<{ id: Tab; label: string; badge?: number }> = [
     { id: "invoice", label: "New invoice" },
     { id: "scenarios", label: "Scenario testing" },
-    { id: "attention", label: attentionCount > 0 ? `Needs checking (${attentionCount})` : "Needs checking" },
+    // The badge lives in its own element so the tab's own text stays exactly its name.
+    { id: "attention", label: "Needs checking", ...(attentionCount > 0 ? { badge: attentionCount } : {}) },
     { id: "settings", label: "Settings" },
   ];
 
@@ -148,6 +178,7 @@ function Tabs({
           onClick={() => setTab(item.id)}
         >
           {item.label}
+          {item.badge !== undefined && <span className="pill unsure">{item.badge}</span>}
         </button>
       ))}
     </>
@@ -158,8 +189,8 @@ function Tabs({
  * Always visible, and deliberately loud in production.
  *
  * A production filing cannot be undone through the API — corrections are portal-only, capped at 72
- * hours and limited to 10% of last month's sales — so the cost of a moment's confusion here is
- * high and the cost of a coloured bar is nothing.
+ * hours and limited to 10% of last month's sales — so the cost of a moment's confusion here is high
+ * and the cost of a coloured bar is nothing.
  */
 function EnvBanner({ env, account, mock }: { env: Env; account: UiAccount | null; mock: boolean }) {
   const missingToken =
@@ -168,7 +199,9 @@ function EnvBanner({ env, account, mock }: { env: Env; account: UiAccount | null
   return (
     <div className={`env-banner ${env}`}>
       <span className="env-dot" />
-      <span>{env === "sandbox" ? "SANDBOX — nothing is filed for real" : "PRODUCTION — invoices are filed for real"}</span>
+      <span>
+        {env === "sandbox" ? "SANDBOX — nothing is filed for real" : "PRODUCTION — invoices are filed for real"}
+      </span>
       <span className="spacer">
         {mock && "Mock mode: no calls leave this machine. "}
         {account ? account.label : "No account configured"}

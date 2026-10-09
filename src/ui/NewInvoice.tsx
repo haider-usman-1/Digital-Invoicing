@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, currentSession } from "./api.ts";
 import { Field } from "./Settings.tsx";
+import { Dialog, Spinner, StatusDot } from "./Dialog.tsx";
 import { computeLine, round2 } from "../core/calc.ts";
 import { SCENARIOS, expectedBuyerRegistrationType, findScenario } from "../core/scenarios.ts";
 import type { UiAccount } from "./App.tsx";
@@ -506,6 +507,14 @@ export function NewInvoice({
     result?.status === "rejected" ? result.errors : checkResult?.status === "rejected" ? checkResult.errors : [];
   const fieldErrors = new Set(rejected.map((e) => e.field).filter(Boolean));
 
+  const busy = submitting || checking;
+  const dialogOpen = busy || result !== null || checkResult !== null;
+
+  function closeDialog() {
+    setResult(null);
+    setCheckResult(null);
+  }
+
   return (
     <>
       {referenceError && (
@@ -530,181 +539,8 @@ export function NewInvoice({
             </span>
           )}
           {template.verify && <span>{template.verify}</span>}
-        </div>
-      )}
-
-      {templateSaved && <div className="note ok">{templateSaved}</div>}
-
-      {checkResult && <CheckPanel result={checkResult} />}
-      {result && <ResultPanel result={result} />}
-
-      <div className="card">
-        <div className="card-head">
-          <h2>Invoice</h2>
-          <span className="hint">Seller: {account.sellerBusinessName || account.label}</span>
-        </div>
-
-        <div className="grid">
-          <Field label="Invoice date" hint="Pakistan date.">
-            <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
-          </Field>
-
-          <Field label="Your invoice number" hint="Kept on this machine; FBR issues its own number.">
-            <input
-              value={internalInvoiceNumber}
-              onChange={(e) => setInternalInvoiceNumber(e.target.value)}
-              placeholder="ACME-2026-0001"
-            />
-          </Field>
-
-          {env === "sandbox" && (
-            <Field label="Scenario" hint="Required by FBR for every sandbox invoice.">
-              <select value={scenarioId} onChange={(e) => applyScenario(e.target.value)}>
-                <option value="">Choose a scenario…</option>
-                {(account.eligibleScenarios.length > 0
-                  ? SCENARIOS.filter((s) => account.eligibleScenarios.includes(s.id))
-                  : SCENARIOS
-                ).map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.id} — {s.description}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          )}
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-head">
-          <h2>Buyer</h2>
-        </div>
-
-        <div className="grid">
-          <Field label="NTN / CNIC" hint="Leave blank if the buyer is unregistered.">
-            <div style={{ display: "flex", gap: "0.4rem" }}>
-              <input
-                className={fieldErrors.has("buyerNTNCNIC") ? "invalid" : undefined}
-                value={buyer.ntncnic}
-                inputMode="numeric"
-                onChange={(e) => setBuyer({ ...buyer, ntncnic: e.target.value })}
-              />
-              <button className="small" onClick={() => void lookupBuyer()} disabled={!buyer.ntncnic.trim()}>
-                Check
-              </button>
-            </div>
-          </Field>
-
-          <Field label="Registration type" {...(buyerLookup ? { hint: buyerLookup } : {})}>
-            <select
-              className={fieldErrors.has("buyerRegistrationType") ? "invalid" : undefined}
-              value={buyer.registrationType}
-              onChange={(e) =>
-                setBuyer({ ...buyer, registrationType: e.target.value as BuyerRegistrationType })
-              }
-            >
-              <option value="Registered">Registered</option>
-              <option value="Unregistered">Unregistered</option>
-            </select>
-          </Field>
-
-          <Field label="Business name" wide>
-            <input
-              className={fieldErrors.has("buyerBusinessName") ? "invalid" : undefined}
-              value={buyer.businessName}
-              onChange={(e) => setBuyer({ ...buyer, businessName: e.target.value })}
-            />
-          </Field>
-
-          <Field label="Province">
-            <input
-              className={fieldErrors.has("buyerProvince") ? "invalid" : undefined}
-              list="provinces"
-              value={buyer.province}
-              onChange={(e) => setBuyer({ ...buyer, province: e.target.value })}
-            />
-            <datalist id="provinces">
-              {reference?.provinces.map((p) => (
-                <option key={p.stateProvinceCode} value={p.stateProvinceDesc} />
-              ))}
-            </datalist>
-          </Field>
-
-          <Field label="Address" wide>
-            <input value={buyer.address} onChange={(e) => setBuyer({ ...buyer, address: e.target.value })} />
-          </Field>
-        </div>
-      </div>
-
-      {items.map((item, index) => (
-        <ItemCard
-          key={item.key}
-          index={index}
-          item={item}
-          computed={computed[index]!}
-          reference={reference}
-          uomOptions={uomByHs[item.hsCode] ?? reference?.unitsOfMeasure ?? []}
-          removable={items.length > 1}
-          fieldErrors={fieldErrors}
-          onChange={(patch) => updateItem(item.key, patch)}
-          onRemove={() => setItems((current) => current.filter((i) => i.key !== item.key))}
-          onSaleTypeChosen={(id) => void loadRates(id)}
-          onHsCodeChosen={(code) => void loadUom(code)}
-        />
-      ))}
-
-      <div className="card">
-        <div className="actions">
-          <button onClick={() => setItems((current) => [...current, blankItem()])}>Add another item</button>
-          <div className="spacer" />
-          <div className="totals">
-            <div>
-              <span>Value excl. tax</span>
-              <span>{totals.value.toFixed(2)}</span>
-            </div>
-            <div>
-              <span>Tax</span>
-              <span>{totals.tax.toFixed(2)}</span>
-            </div>
-            <div>
-              <span>Total</span>
-              <span>{totals.total.toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
-
-        {warnings.length > 0 && (
-          <div className="note warn">
-            <strong>Check these before submitting</strong>
-            <ul>
-              {warnings.map((w, i) => (
-                <li key={i}>
-                  Item {w.index}: {w.text}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        <div className="actions">
-          <button className="primary" onClick={() => void submit()} disabled={submitting || checking}>
-            {submitting
-              ? "Sending to FBR…"
-              : env === "production"
-                ? "File this invoice with FBR"
-                : "Submit to sandbox"}
-          </button>
-          <button onClick={() => void check()} disabled={submitting || checking}>
-            {checking ? "Checking…" : "Check without filing"}
-          </button>
-          <span className="hint">
-            Filing pre-checks the invoice anyway, so a mistake is caught without creating a record.
-          </span>
-        </div>
-
-        {template && (
           <div className="actions">
-            <button onClick={() => void storeTemplate()}>
+            <button className="small" onClick={() => void storeTemplate()}>
               Save these values as the {template.scenarioId} template
             </button>
             {template.customised && (
@@ -713,9 +549,293 @@ export function NewInvoice({
               </button>
             )}
           </div>
-        )}
+        </div>
+      )}
+
+      {templateSaved && <div className="note ok">{templateSaved}</div>}
+
+      <div className="card">
+        <div className="card-head">
+          <h2>Invoice</h2>
+          <span className="hint">Seller: {account.sellerBusinessName || account.label}</span>
+        </div>
+        <div className="card-body">
+          <div className="grid">
+            <Field label="Invoice date" hint="Pakistan date.">
+              <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+            </Field>
+
+            <Field label="Your invoice number" hint="Kept on this machine; FBR issues its own number.">
+              <input
+                value={internalInvoiceNumber}
+                onChange={(e) => setInternalInvoiceNumber(e.target.value)}
+                placeholder="ACME-2026-0001"
+              />
+            </Field>
+
+            {env === "sandbox" && (
+              <Field label="Scenario" span={6} hint="Required by FBR for every sandbox invoice.">
+                <select value={scenarioId} onChange={(e) => applyScenario(e.target.value)}>
+                  <option value="">Choose a scenario…</option>
+                  {(account.eligibleScenarios.length > 0
+                    ? SCENARIOS.filter((s) => account.eligibleScenarios.includes(s.id))
+                    : SCENARIOS
+                  ).map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.id} — {s.description}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+          </div>
+        </div>
       </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h2>Buyer</h2>
+        </div>
+        <div className="card-body">
+          <div className="grid">
+            <Field label="NTN / CNIC" span={4} hint="Leave blank if the buyer is unregistered.">
+              <div className="field-row">
+                <input
+                  className={fieldErrors.has("buyerNTNCNIC") ? "invalid" : undefined}
+                  value={buyer.ntncnic}
+                  inputMode="numeric"
+                  onChange={(e) => setBuyer({ ...buyer, ntncnic: e.target.value })}
+                />
+                <button className="small" onClick={() => void lookupBuyer()} disabled={!buyer.ntncnic.trim()}>
+                  Check
+                </button>
+              </div>
+            </Field>
+
+            <Field label="Registration type" span={4} {...(buyerLookup ? { hint: buyerLookup } : {})}>
+              <select
+                className={fieldErrors.has("buyerRegistrationType") ? "invalid" : undefined}
+                value={buyer.registrationType}
+                onChange={(e) =>
+                  setBuyer({ ...buyer, registrationType: e.target.value as BuyerRegistrationType })
+                }
+              >
+                <option value="Registered">Registered</option>
+                <option value="Unregistered">Unregistered</option>
+              </select>
+            </Field>
+
+            <Field label="Province" span={4}>
+              <input
+                className={fieldErrors.has("buyerProvince") ? "invalid" : undefined}
+                list="provinces"
+                value={buyer.province}
+                onChange={(e) => setBuyer({ ...buyer, province: e.target.value })}
+              />
+              <datalist id="provinces">
+                {reference?.provinces.map((p) => (
+                  <option key={p.stateProvinceCode} value={p.stateProvinceDesc} />
+                ))}
+              </datalist>
+            </Field>
+
+            <Field label="Business name" wide>
+              <input
+                className={fieldErrors.has("buyerBusinessName") ? "invalid" : undefined}
+                value={buyer.businessName}
+                onChange={(e) => setBuyer({ ...buyer, businessName: e.target.value })}
+              />
+            </Field>
+
+            <Field label="Address" wide>
+              <input value={buyer.address} onChange={(e) => setBuyer({ ...buyer, address: e.target.value })} />
+            </Field>
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h2>Line items</h2>
+          <span className="hint">{items.length === 1 ? "1 item" : `${items.length} items`}</span>
+          <span className="spacer" />
+          <button className="small" onClick={() => setItems((current) => [...current, blankItem()])}>
+            Add another item
+          </button>
+        </div>
+        <div className="card-body">
+          {items.map((item, index) => (
+            <ItemCard
+              key={item.key}
+              index={index}
+              item={item}
+              computed={computed[index]!}
+              reference={reference}
+              uomOptions={uomByHs[item.hsCode] ?? reference?.unitsOfMeasure ?? []}
+              removable={items.length > 1}
+              fieldErrors={fieldErrors}
+              onChange={(patch) => updateItem(item.key, patch)}
+              onRemove={() => setItems((current) => current.filter((i) => i.key !== item.key))}
+              onSaleTypeChosen={(id) => void loadRates(id)}
+              onHsCodeChosen={(code) => void loadUom(code)}
+            />
+          ))}
+
+          {warnings.length > 0 && (
+            <div className="note warn">
+              <strong>Check these before submitting</strong>
+              <ul>
+                {warnings.map((w, i) => (
+                  <li key={i}>
+                    Item {w.index}: {w.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/*
+        * Sticky, so the controls and the running totals stay with the user down a long form.
+        * The result arrives in a modal rather than at the top of the page, because feedback the
+        * user has to go looking for is feedback they may click through twice.
+        */}
+      <div className="action-bar">
+        <div className="totals">
+          <div>
+            <span>Value excl. tax</span>
+            <span>{totals.value.toFixed(2)}</span>
+          </div>
+          <div>
+            <span>Tax</span>
+            <span>{totals.tax.toFixed(2)}</span>
+          </div>
+          <div>
+            <span>Total</span>
+            <span>{totals.total.toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div className="actions">
+          <button onClick={() => void check()} disabled={busy}>
+            {checking ? "Checking…" : "Check without filing"}
+          </button>
+          <button className="primary" onClick={() => void submit()} disabled={busy}>
+            {submitting
+              ? "Sending to FBR…"
+              : env === "production"
+                ? "File this invoice with FBR"
+                : "Submit to sandbox"}
+          </button>
+        </div>
+      </div>
+
+      {dialogOpen && (
+        <SubmissionDialog
+          env={env}
+          busy={busy}
+          submitting={submitting}
+          result={result}
+          checkResult={checkResult}
+          onClose={closeDialog}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * Everything the user learns about a submission, in one modal.
+ *
+ * While the request is in flight the dialog refuses to close, which is the point: the previous
+ * layout put the button at the bottom of a long form and its result at the top, so after clicking
+ * you could not tell whether anything had happened. With no idempotency key at FBR, that
+ * uncertainty is what produces a duplicate filing.
+ */
+function SubmissionDialog({
+  env,
+  busy,
+  submitting,
+  result,
+  checkResult,
+  onClose,
+}: {
+  env: Env;
+  busy: boolean;
+  submitting: boolean;
+  result: SubmitResult | null;
+  checkResult: CheckResult | null;
+  onClose: () => void;
+}) {
+  const title = busy
+    ? submitting
+      ? env === "production"
+        ? "Filing with FBR"
+        : "Submitting to sandbox"
+      : "Checking with FBR"
+    : result
+      ? {
+          success: "Invoice filed",
+          rejected: "Invoice rejected",
+          uncertain: "Outcome unknown",
+          error: "Couldn't submit",
+        }[result.status]
+      : checkResult
+        ? { valid: "Pre-check passed", rejected: "Pre-check failed", error: "Couldn't check" }[
+            checkResult.status
+          ]
+        : "";
+
+  const tone: "ok" | "warn" | "error" =
+    result?.status === "success" || checkResult?.status === "valid"
+      ? "ok"
+      : result?.status === "uncertain"
+        ? "warn"
+        : "error";
+
+  const irn = result?.status === "success" ? result.irn : null;
+
+  return (
+    <Dialog
+      title={title}
+      busy={busy}
+      onClose={onClose}
+      icon={busy ? <Spinner /> : <StatusDot tone={tone} />}
+      footer={
+        busy ? (
+          <span className="hint">This usually takes a few seconds. Please don't close the app.</span>
+        ) : (
+          <>
+            {irn && (
+              <button
+                onClick={() => {
+                  void navigator.clipboard?.writeText(irn);
+                }}
+              >
+                Copy invoice number
+              </button>
+            )}
+            <span className="spacer" />
+            <button className="primary" onClick={onClose}>
+              Close
+            </button>
+          </>
+        )
+      }
+    >
+      {busy ? (
+        <span className="hint">
+          {submitting
+            ? "Waiting for FBR to accept the invoice. Don't submit again — if this times out the app will tell you exactly what to check."
+            : "Asking FBR whether it would accept this invoice. Nothing is being filed."}
+        </span>
+      ) : checkResult ? (
+        <CheckPanel result={checkResult} />
+      ) : result ? (
+        <ResultPanel result={result} />
+      ) : null}
+    </Dialog>
   );
 }
 
@@ -764,8 +884,9 @@ function ItemCard({
         )}
       </div>
 
+      <div className="item-body">
       <div className="grid">
-        <Field label="HS code">
+        <Field label="HS code" span={3}>
           <input
             className={fieldErrors.has("hsCode") ? "invalid" : undefined}
             list={`hs-${item.key}`}
@@ -785,14 +906,8 @@ function ItemCard({
           </datalist>
         </Field>
 
-        <Field label="Description" wide>
-          <input
-            value={item.productDescription}
-            onChange={(e) => onChange({ productDescription: e.target.value })}
-          />
-        </Field>
 
-        <Field label="Sale type">
+        <Field label="Sale type" span={3}>
           <select
             className={fieldErrors.has("saleType") ? "invalid" : undefined}
             value={item.transTypeId ?? ""}
@@ -811,7 +926,7 @@ function ItemCard({
           </select>
         </Field>
 
-        <Field label="Rate" hint={computed.rates.length === 0 ? "Pick a sale type to load rates." : undefined}>
+        <Field label="Rate" span={3} hint={computed.rates.length === 0 ? "Pick a sale type to load rates." : undefined}>
           <select
             className={fieldErrors.has("rate") ? "invalid" : undefined}
             value={item.rateDesc}
@@ -828,6 +943,7 @@ function ItemCard({
 
         <Field
           label="Unit of measure"
+          span={3}
           hint={uomOptions.length > 0 ? "FBR restricts this per HS code." : undefined}
         >
           <input
@@ -843,7 +959,14 @@ function ItemCard({
           </datalist>
         </Field>
 
-        <Field label="Quantity">
+        <Field label="Description" wide>
+          <input
+            value={item.productDescription}
+            onChange={(e) => onChange({ productDescription: e.target.value })}
+          />
+        </Field>
+
+        <Field label="Quantity" span={2}>
           <input
             className={fieldErrors.has("quantity") ? "invalid" : undefined}
             inputMode="decimal"
@@ -859,6 +982,7 @@ function ItemCard({
           */}
         <Field
           label="Value excl. sales tax"
+          span={3}
           hint={item.amountBasis === "unitPrice" ? "Quantity x unit price, less discount." : undefined}
         >
           <input
@@ -876,6 +1000,7 @@ function ItemCard({
 
         <Field
           label="Unit price (excl. tax)"
+          span={3}
           hint={item.amountBasis === "value" ? "Worked back from the value; not sent to FBR." : undefined}
         >
           <input
@@ -886,12 +1011,12 @@ function ItemCard({
           />
         </Field>
 
-        <Field label="Discount">
+        <Field label="Discount" span={2}>
           <input inputMode="decimal" value={item.discount} onChange={(e) => onChange({ discount: e.target.value })} />
         </Field>
 
         {isThirdSchedule && (
-          <Field label="Retail price per unit" hint="3rd Schedule goods are taxed on retail price.">
+          <Field label="Retail price per unit" span={2} hint="3rd Schedule goods are taxed on retail price.">
             <input
               className={fieldErrors.has("fixedNotifiedValueOrRetailPrice") ? "invalid" : undefined}
               inputMode="decimal"
@@ -902,7 +1027,7 @@ function ItemCard({
         )}
       </div>
 
-      <div className="grid">
+      <div className="grid item-amounts">
         <Amount
           label="Sales tax"
           field="salesTaxApplicable"
@@ -944,6 +1069,7 @@ function ItemCard({
           invalid={fieldErrors.has("fedPayable")}
         />
       </div>
+      </div>
     </div>
   );
 }
@@ -974,7 +1100,7 @@ function Amount({
 
   // Goes through Field so the label is actually associated with the input, like every other field.
   return (
-    <Field label={overridden ? `${label} · edited` : label}>
+    <Field label={overridden ? `${label} · edited` : label} span={2}>
       <input
         className={[invalid ? "invalid" : "", overridden ? "overridden" : ""].filter(Boolean).join(" ")}
         inputMode="decimal"

@@ -54,6 +54,9 @@ const REFERENCE = {
   unitsOfMeasure: [{ uoM_ID: 2, description: "KG" }],
 };
 
+/** Resolve this to let a deliberately-stalled request finish. */
+let releaseStalled: (() => void) | null = null;
+
 function stubApi(overrides: Record<string, unknown> = {}) {
   const routes: Record<string, unknown> = {
     "/api/session": {
@@ -100,6 +103,15 @@ function stubApi(overrides: Record<string, unknown> = {}) {
     const path = url.pathname;
     const body = routes[path];
     if (body === undefined) return new Response("Not found", { status: 404 });
+    if (body === "STALL") {
+      await new Promise<void>((resolve) => {
+        releaseStalled = resolve;
+      });
+      return new Response(JSON.stringify({ status: "success", irn: "0786909DI1CFGJK395794" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -256,6 +268,77 @@ describe("HS code lookups", () => {
     fireEvent.change(hs, { target: { value: "2942.0000" } });
     await Promise.resolve();
     expect(requested.filter((p) => p.startsWith("/api/uom-for-hs"))).toHaveLength(1);
+  });
+});
+
+describe("submission feedback", () => {
+  /**
+   * The previous layout put the button at the bottom of a long form and its result at the top, so
+   * after clicking you could not tell whether anything had happened without scrolling. With no
+   * idempotency key at FBR, that uncertainty is what produces a duplicate filing.
+   */
+  test("shows the result in a modal rather than somewhere the user has to go looking", async () => {
+    stubApi({ "/api/invoice/validate": { status: "valid" } });
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Invoice")).toBeTruthy());
+
+    fireEvent.click(screen.getByText("Check without filing"));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toMatch(/has NOT been filed/);
+  });
+
+  test("blocks a second submission while the first is in flight", async () => {
+    stubApi({ "/api/invoice/submit": "STALL" });
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Invoice")).toBeTruthy());
+
+    const submit = screen.getByText(/Submit to sandbox/).closest("button")!;
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
+
+    // Both the disabled button and the modal overlay stand between the user and a second send.
+    expect((screen.getByText(/Sending to FBR/).closest("button") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Check without filing").closest("button")!.disabled).toBe(true);
+    expect(screen.getByRole("dialog").getAttribute("aria-busy")).toBe("true");
+
+    const sends = requested.filter((p) => p === "/api/invoice/submit").length;
+    fireEvent.click(submit);
+    expect(requested.filter((p) => p === "/api/invoice/submit")).toHaveLength(sends);
+
+    releaseStalled?.();
+    await waitFor(() => expect(screen.getByText(/Filed with FBR/)).toBeTruthy());
+  });
+
+  test("refuses to be dismissed mid-flight, then closes once there is an answer", async () => {
+    stubApi({ "/api/invoice/submit": "STALL" });
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Invoice")).toBeTruthy());
+
+    fireEvent.click(screen.getByText(/Submit to sandbox/).closest("button")!);
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeTruthy();
+
+    releaseStalled?.();
+    await waitFor(() => expect(screen.getByText("Close")).toBeTruthy());
+
+    fireEvent.click(screen.getByText("Close"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  test("surfaces the invoice number where the user is already looking", async () => {
+    stubApi({
+      "/api/invoice/submit": { status: "success", irn: "0786909DI1CFGJK395794", dated: null },
+    });
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Invoice")).toBeTruthy());
+
+    fireEvent.click(screen.getByText(/Submit to sandbox/).closest("button")!);
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("0786909DI1CFGJK395794");
   });
 });
 

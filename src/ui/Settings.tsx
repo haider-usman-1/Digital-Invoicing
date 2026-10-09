@@ -15,20 +15,15 @@ export function Settings({ accounts, onChanged }: { accounts: UiAccount[]; onCha
 
   return (
     <>
-      {accounts.length === 0 && editing !== "new" && (
-        <div className="note warn">
-          <strong>No accounts yet</strong>
-          <span>Add a seller account to start filing invoices.</span>
-        </div>
-      )}
-
       <div className="card">
         <div className="card-head">
           <h2>Seller accounts</h2>
           <span className="hint">Stored on this machine at {currentSession().dataDir}</span>
         </div>
 
-        {accounts.length > 0 && (
+        {accounts.length === 0 ? (
+          <div className="empty">No accounts yet. Add one to start filing invoices.</div>
+        ) : (
           <table>
             <thead>
               <tr>
@@ -48,9 +43,10 @@ export function Settings({ accounts, onChanged }: { accounts: UiAccount[]; onCha
                     <span className={`pill ${account.hasSandboxToken ? "done" : "todo"}`}>sandbox</span>{" "}
                     <span className={`pill ${account.hasProductionToken ? "done" : "todo"}`}>production</span>
                   </td>
-                  <td>{account.eligibleScenarios.length || "—"}</td>
+                  <td className="hint">{account.eligibleScenarios.length || "—"}</td>
                   <td>
                     <div className="actions">
+                      <span className="spacer" />
                       <button className="small" onClick={() => setEditing(account)}>
                         Edit
                       </button>
@@ -70,10 +66,12 @@ export function Settings({ accounts, onChanged }: { accounts: UiAccount[]; onCha
           </table>
         )}
 
-        <div className="actions">
-          <button className="primary" onClick={() => setEditing("new")}>
-            Add an account
-          </button>
+        <div className="card-foot">
+          <div className="actions">
+            <button className="primary" onClick={() => setEditing("new")}>
+              Add an account
+            </button>
+          </div>
         </div>
       </div>
 
@@ -138,117 +136,119 @@ function AccountForm({
         <h2>{account ? `Edit ${account.label}` : "New account"}</h2>
       </div>
 
-      {error && <div className="note error">{error}</div>}
+      <div className="card-body">
+        {error && <div className="note error">{error}</div>}
 
-      <div className="grid">
-        <Field label="Name for this account" hint="Only shown in this app.">
-          <input value={form.label} onChange={(e) => set("label")(e.target.value)} placeholder="Acme Traders" />
-        </Field>
-        <Field label="Seller NTN / CNIC" hint="7 digits for an NTN, 13 for a CNIC. No dashes.">
-          <input
-            value={form.sellerNTNCNIC}
-            onChange={(e) => set("sellerNTNCNIC")(e.target.value)}
-            inputMode="numeric"
-            placeholder="0786909"
-          />
-        </Field>
-        <Field label="Registered business name" wide>
-          <input
-            value={form.sellerBusinessName}
-            onChange={(e) => set("sellerBusinessName")(e.target.value)}
-          />
-        </Field>
-        <Field label="Province" hint="Must match FBR's spelling exactly.">
-          <input value={form.sellerProvince} onChange={(e) => set("sellerProvince")(e.target.value)} placeholder="Sindh" />
-        </Field>
-        <Field label="Address" wide>
-          <input value={form.sellerAddress} onChange={(e) => set("sellerAddress")(e.target.value)} />
-        </Field>
-      </div>
+        <div className="grid">
+          <Field label="Name for this account" span={4} hint="Only shown in this app.">
+            <input value={form.label} onChange={(e) => set("label")(e.target.value)} placeholder="Acme Traders" />
+          </Field>
+          <Field label="Seller NTN / CNIC" span={4} hint="7 digits for an NTN, 13 for a CNIC. No dashes.">
+            <input
+              value={form.sellerNTNCNIC}
+              onChange={(e) => set("sellerNTNCNIC")(e.target.value)}
+              inputMode="numeric"
+              placeholder="0786909"
+            />
+          </Field>
+          <Field label="Province" span={4} hint="Must match FBR's spelling exactly.">
+            <input
+              value={form.sellerProvince}
+              onChange={(e) => set("sellerProvince")(e.target.value)}
+              placeholder="Sindh"
+            />
+          </Field>
 
-      <div className="grid">
-        <Field
-          label="Sandbox token"
-          hint="IRIS → Digital Invoicing → Sandbox Environment → View Web API Environment Details."
-        >
-          <input
-            type="password"
-            value={form.sandboxToken}
-            onChange={(e) => set("sandboxToken")(e.target.value)}
-            placeholder={account?.hasSandboxToken ? "Saved — leave blank to keep it" : ""}
-            autoComplete="off"
-          />
-        </Field>
-        <Field
-          label="Production token"
-          hint="FBR generates this automatically once every eligible scenario has passed in sandbox."
-        >
-          <input
-            type="password"
-            value={form.productionToken}
-            onChange={(e) => set("productionToken")(e.target.value)}
-            placeholder={account?.hasProductionToken ? "Saved — leave blank to keep it" : ""}
-            autoComplete="off"
-          />
-        </Field>
-      </div>
+          <Field label="Registered business name" wide>
+            <input value={form.sellerBusinessName} onChange={(e) => set("sellerBusinessName")(e.target.value)} />
+          </Field>
+          <Field label="Address" wide>
+            <input value={form.sellerAddress} onChange={(e) => set("sellerAddress")(e.target.value)} />
+          </Field>
 
-      <div className="field">
-        <label>Eligible scenarios</label>
-        {/*
-         * Taken from the user's own IRIS dashboard rather than derived here. FBR publishes a
-         * Business-Nature x Sector matrix, but it contains duplicate and missing rows, and the
-         * dashboard's "Eligible Scenarios" tile is the authoritative live list per registration.
-         */}
-        <p className="field-note">
-          Tick the ones IRIS lists for this registration, under Digital Invoicing → Eligible Scenarios.
-          Each one needs a successfully posted sandbox invoice before FBR issues the production token.
-        </p>
-        <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))" }}>
-          {SCENARIOS.map((scenario) => (
-            <label key={scenario.id} style={{ display: "flex", gap: "0.45rem", fontSize: "0.85rem" }}>
-              <input
-                type="checkbox"
-                style={{ width: "auto", minWidth: 0 }}
-                checked={eligible.includes(scenario.id)}
-                onChange={(e) =>
-                  setEligible((list) =>
-                    e.target.checked ? [...list, scenario.id] : list.filter((id) => id !== scenario.id),
-                  )
-                }
-              />
-              <span>
-                <strong>{scenario.id}</strong> — {scenario.description}
-              </span>
-            </label>
-          ))}
+          <Field
+            label="Sandbox token"
+            span={6}
+            hint="IRIS → Digital Invoicing → Sandbox Environment → View Web API Environment Details."
+          >
+            <input
+              type="password"
+              value={form.sandboxToken}
+              onChange={(e) => set("sandboxToken")(e.target.value)}
+              placeholder={account?.hasSandboxToken ? "Saved — leave blank to keep it" : ""}
+              autoComplete="off"
+            />
+          </Field>
+          <Field
+            label="Production token"
+            span={6}
+            hint="FBR generates this automatically once every eligible scenario has passed in sandbox."
+          >
+            <input
+              type="password"
+              value={form.productionToken}
+              onChange={(e) => set("productionToken")(e.target.value)}
+              placeholder={account?.hasProductionToken ? "Saved — leave blank to keep it" : ""}
+              autoComplete="off"
+            />
+          </Field>
+        </div>
+
+        <div className="field">
+          <label>Eligible scenarios</label>
+          {/*
+           * Taken from the user's own IRIS dashboard rather than derived here. FBR publishes a
+           * Business-Nature x Sector matrix, but it contains duplicate and missing rows, and the
+           * dashboard's "Eligible Scenarios" tile is the authoritative live list per registration.
+           */}
+          <p className="field-note">
+            Tick the ones IRIS lists for this registration, under Digital Invoicing → Eligible
+            Scenarios. Each one needs a successfully posted sandbox invoice before FBR issues the
+            production token.
+          </p>
+          <div className="check-grid">
+            {SCENARIOS.map((scenario) => (
+              <label key={scenario.id} className="check">
+                <input
+                  type="checkbox"
+                  checked={eligible.includes(scenario.id)}
+                  onChange={(e) =>
+                    setEligible((list) =>
+                      e.target.checked ? [...list, scenario.id] : list.filter((id) => id !== scenario.id),
+                    )
+                  }
+                />
+                <span>
+                  <strong>{scenario.id}</strong> — {scenario.description}
+                </span>
+              </label>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="actions">
-        <button className="primary" onClick={() => void save()} disabled={saving}>
-          {saving ? "Saving…" : "Save account"}
-        </button>
-        <button onClick={onCancel}>Cancel</button>
+      <div className="card-foot">
+        <div className="actions">
+          <button className="primary" onClick={() => void save()} disabled={saving}>
+            {saving ? "Saving…" : "Save account"}
+          </button>
+          <button onClick={onCancel}>Cancel</button>
+        </div>
       </div>
     </div>
   );
 }
 
+const LABELLABLE = new Set(["input", "select", "textarea"]);
+
 /**
  * Associates the label with the field's first control.
  *
- * Without this the label is just text sitting next to an input: clicking it does nothing and a
- * screen reader never announces which input it belongs to. Targeting the first control is right for
- * every field here — a trailing button (like "Check") or a `<datalist>` is never the thing being
- * labelled.
+ * Descends through layout wrappers rather than taking the first child blindly: some fields wrap
+ * their input in a div to sit a button beside it, and a <div> cannot be labelled. Buttons are
+ * skipped too — a trailing "Check" is not the thing the label names.
  */
-const LABELLABLE = new Set(["input", "select", "textarea"]);
-
 function withControlId(children: React.ReactNode, id: string): React.ReactNode {
-  // Descends through layout wrappers rather than taking the first child blindly: some fields wrap
-  // their input in a div to sit a button beside it, and a <div> cannot be labelled. Buttons are
-  // skipped too — a trailing "Check" is not the thing the label names.
   const done = { value: false };
 
   function visit(node: React.ReactNode): React.ReactNode {
@@ -270,21 +270,33 @@ function withControlId(children: React.ReactNode, id: string): React.ReactNode {
   return Children.toArray(children).map(visit);
 }
 
+/**
+ * A labelled form control occupying a span of the 12-column grid.
+ *
+ * Fields declare their own width rather than inheriting one from an auto-fit track, which is what
+ * kept rows from lining up: the column count changed per row, so neighbouring fields ended up at
+ * unrelated widths.
+ */
 export function Field({
   label,
   hint,
+  span,
   wide,
   children,
 }: {
   label: string;
   hint?: string | undefined;
-  /** Spans the full row. For free text that is routinely long — names, addresses, descriptions. */
+  /** Columns out of 12. Defaults to 3, i.e. four per row. */
+  span?: 2 | 3 | 4 | 6;
+  /** Full row, for free text that routinely runs long. */
   wide?: boolean;
   children: React.ReactNode;
 }) {
   const id = useId();
+  const width = wide ? "wide" : span && span !== 3 ? `col-${span}` : "";
+
   return (
-    <div className={wide ? "field wide" : "field"}>
+    <div className={`field ${width}`.trim()}>
       <label htmlFor={id}>{label}</label>
       {withControlId(children, id)}
       {hint && <span className="field-note">{hint}</span>}
