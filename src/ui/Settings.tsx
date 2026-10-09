@@ -152,7 +152,7 @@ function AccountForm({
             placeholder="0786909"
           />
         </Field>
-        <Field label="Registered business name">
+        <Field label="Registered business name" wide>
           <input
             value={form.sellerBusinessName}
             onChange={(e) => set("sellerBusinessName")(e.target.value)}
@@ -161,7 +161,7 @@ function AccountForm({
         <Field label="Province" hint="Must match FBR's spelling exactly.">
           <input value={form.sellerProvince} onChange={(e) => set("sellerProvince")(e.target.value)} placeholder="Sindh" />
         </Field>
-        <Field label="Address">
+        <Field label="Address" wide>
           <input value={form.sellerAddress} onChange={(e) => set("sellerAddress")(e.target.value)} />
         </Field>
       </div>
@@ -273,15 +273,18 @@ function withControlId(children: React.ReactNode, id: string): React.ReactNode {
 export function Field({
   label,
   hint,
+  wide,
   children,
 }: {
   label: string;
   hint?: string | undefined;
+  /** Spans the full row. For free text that is routinely long — names, addresses, descriptions. */
+  wide?: boolean;
   children: React.ReactNode;
 }) {
   const id = useId();
   return (
-    <div className="field">
+    <div className={wide ? "field wide" : "field"}>
       <label htmlFor={id}>{label}</label>
       {withControlId(children, id)}
       {hint && <span className="field-note">{hint}</span>}

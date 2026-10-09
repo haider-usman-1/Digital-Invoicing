@@ -568,3 +568,12 @@ input.derived:focus {
   color: var(--text);
   font-style: normal;
 }
+
+/*
+ * Fields holding free text that is routinely long — business names, addresses, product
+ * descriptions. The grid gives every track the same width, which leaves a 60-character address in
+ * the same box as a quantity, so these take the whole row instead.
+ */
+.field.wide {
+  grid-column: 1 / -1;
+}

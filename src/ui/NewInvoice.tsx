@@ -570,7 +570,7 @@ export function NewInvoice({
             </select>
           </Field>
 
-          <Field label="Business name">
+          <Field label="Business name" wide>
             <input
               className={fieldErrors.has("buyerBusinessName") ? "invalid" : undefined}
               value={buyer.businessName}
@@ -592,7 +592,7 @@ export function NewInvoice({
             </datalist>
           </Field>
 
-          <Field label="Address">
+          <Field label="Address" wide>
             <input value={buyer.address} onChange={(e) => setBuyer({ ...buyer, address: e.target.value })} />
           </Field>
         </div>
@@ -744,7 +744,7 @@ function ItemCard({
           </datalist>
         </Field>
 
-        <Field label="Description">
+        <Field label="Description" wide>
           <input
             value={item.productDescription}
             onChange={(e) => onChange({ productDescription: e.target.value })}

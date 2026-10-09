@@ -168,6 +168,50 @@ describe("App", () => {
   });
 });
 
+describe("field widths", () => {
+  /** The wrapping .field div carries the width class. */
+  function fieldOf(control: HTMLElement): HTMLElement {
+    return control.closest(".field") as HTMLElement;
+  }
+
+  test("gives names, addresses and descriptions the full row", async () => {
+    // These routinely run long, and the grid otherwise gives them the same box as a quantity.
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Buyer")).toBeTruthy());
+
+    expect(fieldOf(screen.getByLabelText(/^Business name$/)).className).toContain("wide");
+    expect(fieldOf(screen.getByLabelText(/^Address$/)).className).toContain("wide");
+    expect(fieldOf(screen.getByLabelText(/^Description$/)).className).toContain("wide");
+  });
+
+  test("leaves short fields on the normal grid track", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Buyer")).toBeTruthy());
+
+    expect(fieldOf(screen.getByLabelText(/^Quantity$/)).className).not.toContain("wide");
+    expect(fieldOf(screen.getByLabelText(/^HS code$/)).className).not.toContain("wide");
+  });
+
+  test("does the same on the account form", async () => {
+    stubApi({ "/api/accounts": { accounts: [] } });
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("New account")).toBeTruthy());
+
+    expect(fieldOf(screen.getByLabelText(/^Registered business name$/)).className).toContain("wide");
+    expect(fieldOf(screen.getByLabelText(/^Address$/)).className).toContain("wide");
+    expect(fieldOf(screen.getByLabelText(/^Province$/)).className).not.toContain("wide");
+  });
+
+  test("puts no length cap on those inputs", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Buyer")).toBeTruthy());
+
+    for (const label of [/^Business name$/, /^Address$/, /^Description$/]) {
+      expect((screen.getByLabelText(label) as HTMLInputElement).maxLength).toBe(-1);
+    }
+  });
+});
+
 describe("value and unit price are interchangeable", () => {
   function amountFields() {
     return {
