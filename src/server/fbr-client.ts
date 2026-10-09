@@ -331,7 +331,7 @@ function mockInvoiceCall(payload: FbrInvoicePayload, action: "post" | "validate"
     };
   }
 
-  const irn = `${payload.sellerNTNCNIC}DI${Date.now()}`;
+  const irn = `${payload.sellerNTNCNIC}DI${mockEpochMs()}`;
   const statuses = payload.items.map((_, index) => ({
     itemSNo: String(index + 1),
     statusCode: "00",
@@ -359,6 +359,19 @@ function mockInvoiceCall(payload: FbrInvoicePayload, action: "post" | "validate"
 
 function mockTimestamp(): string {
   return new Date().toISOString().replace("T", " ").slice(0, 19);
+}
+
+let lastMockEpochMs = 0;
+
+/**
+ * A strictly increasing millisecond value for mock IRNs.
+ *
+ * `Date.now()` alone hands two invoices submitted in the same millisecond an identical invoice
+ * number, which real FBR would never do and which makes mock data misleading to test against.
+ */
+function mockEpochMs(): number {
+  lastMockEpochMs = Math.max(Date.now(), lastMockEpochMs + 1);
+  return lastMockEpochMs;
 }
 
 const MOCK_PROVINCES: Province[] = [

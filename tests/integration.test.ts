@@ -204,6 +204,21 @@ describe("submitting an invoice", () => {
     expect(result.irn).toMatch(/^0786909DI\d{13}$/);
   });
 
+  test("gives two invoices filed back-to-back distinct invoice numbers", async () => {
+    // Two submissions can land in the same millisecond, and an IRN is the only proof a particular
+    // invoice exists — duplicates would make the log ambiguous.
+    const [first, second] = await Promise.all([
+      json<{ irn: string }>(
+        await authed("/api/invoice/submit", { method: "POST", body: JSON.stringify(invoice("first")) }),
+      ),
+      json<{ irn: string }>(
+        await authed("/api/invoice/submit", { method: "POST", body: JSON.stringify(invoice("second")) }),
+      ),
+    ]);
+
+    expect(first.irn).not.toBe(second.irn);
+  });
+
   test("reports an item-level rejection as rejected, not as a success", async () => {
     // The mock returns FBR's real shape here: outer statusCode "00" with a failing item.
     const result = await json<{ status: string; stage: string; errors: Array<{ plain: string }> }>(
