@@ -93,8 +93,11 @@ function stubApi(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 
+  requested.length = 0;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
-    const path = new URL(String(input), "http://127.0.0.1:7345").pathname;
+    const url = new URL(String(input), "http://127.0.0.1:7345");
+    requested.push(url.pathname + url.search);
+    const path = url.pathname;
     const body = routes[path];
     if (body === undefined) return new Response("Not found", { status: 404 });
     return new Response(JSON.stringify(body), {
@@ -103,6 +106,9 @@ function stubApi(overrides: Record<string, unknown> = {}) {
     });
   }) as typeof fetch;
 }
+
+/** Paths requested since the last stubApi() call, for asserting what the UI asks FBR. */
+const requested: string[] = [];
 
 const originalFetch = globalThis.fetch;
 
@@ -214,6 +220,42 @@ describe("checking without filing", () => {
     fireEvent.click(screen.getByText("Check without filing"));
     await waitFor(() => expect(screen.getByText(/Couldn't check this invoice/)).toBeTruthy());
     expect(screen.getByText(/Nothing has been filed/)).toBeTruthy();
+  });
+});
+
+describe("HS code lookups", () => {
+  test("asks FBR only once the code is complete, not on every keystroke", async () => {
+    // Typing one code used to fire a request per character. Real usage left a cache full of
+    // entries for "q", "2", "29", "294"... each answered with an empty list.
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Item 1")).toBeTruthy());
+
+    const hs = screen.getByLabelText(/^HS code$/);
+    for (const partial of ["2", "29", "294", "2942", "2942.", "2942.00", "2942.000"]) {
+      fireEvent.change(hs, { target: { value: partial } });
+    }
+    expect(requested.filter((p) => p.startsWith("/api/uom-for-hs"))).toHaveLength(0);
+
+    fireEvent.change(hs, { target: { value: "2942.0000" } });
+    await waitFor(() =>
+      expect(requested.filter((p) => p.startsWith("/api/uom-for-hs"))).toHaveLength(1),
+    );
+  });
+
+  test("does not re-ask for a code it already looked up", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Item 1")).toBeTruthy());
+
+    const hs = screen.getByLabelText(/^HS code$/);
+    fireEvent.change(hs, { target: { value: "2942.0000" } });
+    await waitFor(() =>
+      expect(requested.filter((p) => p.startsWith("/api/uom-for-hs"))).toHaveLength(1),
+    );
+
+    fireEvent.change(hs, { target: { value: "2942.000" } });
+    fireEvent.change(hs, { target: { value: "2942.0000" } });
+    await Promise.resolve();
+    expect(requested.filter((p) => p.startsWith("/api/uom-for-hs"))).toHaveLength(1);
   });
 });
 

@@ -9,6 +9,14 @@
 
 export type Env = "sandbox" | "production";
 
+/**
+ * The shape of every HS code FBR issues: four digits, a dot, four digits.
+ *
+ * Checked against all 7,809 codes returned by the live `itemdesccode` endpoint — every one matches.
+ * Used to avoid asking FBR about half-typed codes.
+ */
+export const HS_CODE_PATTERN = /^\d{4}\.\d{4}$/;
+
 // ---------------------------------------------------------------------------
 // Local configuration
 // ---------------------------------------------------------------------------

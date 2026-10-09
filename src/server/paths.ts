@@ -1,43 +1,85 @@
 /**
  * Where the app keeps its data.
  *
- * Under the user profile rather than beside the executable: the profile directory has user-scoped
- * ACLs by default, while an .exe sitting in Downloads or a shared folder may not. The tokens stored
- * here are long-lived (FBR issues them with a 5 year validity), so this is worth getting right even
- * though the user chose plain-file storage over a password prompt.
+ * Everything lives in a `data` folder beside the executable (or beside the project when running
+ * from source), so the app is portable: copy the folder and you have taken the accounts, the
+ * submission history and the cached FBR reference lists with you, and there is exactly one thing to
+ * back up.
+ *
+ * The trade-off, stated plainly: a per-user location like %APPDATA% gets user-scoped ACLs for free,
+ * while a folder beside the exe inherits whatever the surrounding directory allows. `accounts.json`
+ * holds long-lived FBR tokens (5 year validity), so keep the app somewhere only you can read —
+ * your own Documents or Desktop, not a shared drive.
+ *
+ * Set FBR_DATA_DIR to override the location entirely.
  */
 
-import { homedir, platform } from "node:os";
-import { join } from "node:path";
-import { mkdirSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdirSync } from "node:fs";
+import { homedir, platform, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
-const APP_DIR_NAME = "fbr-di";
+const DATA_DIR_NAME = "data";
+
+/**
+ * The directory the app actually lives in.
+ *
+ * In a compiled single-file build, source modules are served from a virtual filesystem (`/$bunfs`
+ * on POSIX, `B:\~BUN` on Windows), so `import.meta.dir` is not a real path — the executable itself
+ * is. Running from source, the project directory is the working directory.
+ */
+function appDir(): string {
+  const dir = import.meta.dir;
+  const compiled = dir.startsWith("/$bunfs") || /^[A-Za-z]:[\\/]~BUN/.test(dir);
+  return compiled ? dirname(process.execPath) : process.cwd();
+}
 
 export function dataDir(): string {
-  const override = process.env.FBR_DATA_DIR;
-  if (override) return override;
-
-  if (platform() === "win32") {
-    const appData = process.env.APPDATA ?? join(homedir(), "AppData", "Roaming");
-    return join(appData, APP_DIR_NAME);
-  }
-
-  if (platform() === "darwin") {
-    return join(homedir(), "Library", "Application Support", APP_DIR_NAME);
-  }
-
-  const xdg = process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share");
-  return join(xdg, APP_DIR_NAME);
+  return process.env.FBR_DATA_DIR ?? join(appDir(), DATA_DIR_NAME);
 }
 
 export function ensureDataDir(): string {
   const dir = dataDir();
-  mkdirSync(dir, { recursive: true });
+  try {
+    mkdirSync(dir, { recursive: true });
+    accessSync(dir, constants.W_OK);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Can't write to ${dir}. The app stores its data beside itself, so move it somewhere you can ` +
+        `write to — your Desktop or Documents rather than Program Files — or set FBR_DATA_DIR to ` +
+        `another folder. (${reason})`,
+    );
+  }
   return dir;
 }
 
 export function dataFile(name: string): string {
   return join(ensureDataDir(), name);
+}
+
+/** Somewhere to report a startup failure when the data directory itself is the problem. */
+export function fallbackLogFile(): string {
+  return join(tmpdir(), "fbr-di-startup-error.log");
+}
+
+/**
+ * The pre-0.2 location, for anyone upgrading.
+ *
+ * Returns a path only when there is data there and nothing here yet, so an existing install isn't
+ * silently abandoned with the user wondering where their accounts went.
+ */
+export function legacyDataDir(): string | null {
+  const legacy =
+    platform() === "win32"
+      ? join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "fbr-di")
+      : platform() === "darwin"
+        ? join(homedir(), "Library", "Application Support", "fbr-di")
+        : join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "fbr-di");
+
+  if (process.env.FBR_DATA_DIR) return null;
+  if (!existsSync(join(legacy, ACCOUNTS_FILE))) return null;
+  if (existsSync(join(dataDir(), ACCOUNTS_FILE))) return null;
+  return legacy;
 }
 
 export const ACCOUNTS_FILE = "accounts.json";

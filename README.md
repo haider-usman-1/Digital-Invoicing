@@ -11,6 +11,24 @@ plain-language explanation of what FBR rejected.
 - **What it doesn't do yet:** [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - **Why it's built this way:** [`docs/superpowers/specs/`](docs/superpowers/specs/)
 
+## Where your data lives
+
+Everything sits in a `data/` folder beside the executable (or beside the project when running from
+source), so the app is portable — copy that folder and you have taken the accounts, the submission
+history and the cached FBR reference lists with you.
+
+```
+data/accounts.json            seller details and FBR tokens (written 0600)
+data/submissions.ndjson       append-only log of every invoice submitted
+data/reference-cache.json     FBR's HS code, UoM, province and rate lists
+data/scenario-templates.json  your saved corrections to the scenario templates
+```
+
+`FBR_DATA_DIR` overrides the location. The trade-off of keeping data beside the app rather than in
+a per-user directory: it inherits whatever permissions the surrounding folder has, and
+`accounts.json` holds tokens FBR issues with a five-year validity. Keep the app somewhere only you
+can read.
+
 ## Development
 
 Requires [Bun](https://bun.sh). No other toolchain.

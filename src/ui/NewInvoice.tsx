@@ -4,6 +4,7 @@ import { Field } from "./Settings.tsx";
 import { computeLine, round2 } from "../core/calc.ts";
 import { SCENARIOS, expectedBuyerRegistrationType, findScenario } from "../core/scenarios.ts";
 import type { UiAccount } from "./App.tsx";
+import { HS_CODE_PATTERN } from "../core/types.ts";
 import type {
   BuyerRegistrationType,
   Env,
@@ -201,7 +202,9 @@ export function NewInvoice({
 
   const loadUom = useCallback(
     async (hsCode: string) => {
-      if (!account || !hsCode || uomByHs[hsCode]) return;
+      // Only ask once the code is complete. Firing on every keystroke sent FBR a request per
+      // character — ten round-trips to type one code, each answered with an empty list.
+      if (!account || !HS_CODE_PATTERN.test(hsCode) || uomByHs[hsCode]) return;
       try {
         const { unitsOfMeasure } = await api.get<{ unitsOfMeasure: UnitOfMeasure[] }>(
           `/api/uom-for-hs?accountId=${account.id}&env=${env}&hsCode=${encodeURIComponent(hsCode)}`,

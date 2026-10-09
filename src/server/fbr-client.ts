@@ -331,7 +331,7 @@ function mockInvoiceCall(payload: FbrInvoicePayload, action: "post" | "validate"
     };
   }
 
-  const irn = `${payload.sellerNTNCNIC}DI${mockEpochMs()}`;
+  const irn = `${payload.sellerNTNCNIC}DI${mockIrnSuffix()}`;
   const statuses = payload.items.map((_, index) => ({
     itemSNo: String(index + 1),
     statusCode: "00",
@@ -361,17 +361,20 @@ function mockTimestamp(): string {
   return new Date().toISOString().replace("T", " ").slice(0, 19);
 }
 
-let lastMockEpochMs = 0;
+let lastMockCounter = 0;
 
 /**
- * A strictly increasing millisecond value for mock IRNs.
+ * The suffix of a mock invoice number.
  *
- * `Date.now()` alone hands two invoices submitted in the same millisecond an identical invoice
- * number, which real FBR would never do and which makes mock data misleading to test against.
+ * Shaped like a real one: production returned `4987622DI1CFGJK395794`, i.e. twelve uppercase
+ * alphanumerics — NOT the 13-digit epoch timestamp the spec's examples imply. Generating the
+ * documented-but-wrong shape would teach anyone testing against the mock the wrong thing.
+ *
+ * Derived from a monotonic counter so two invoices filed in the same millisecond still differ.
  */
-function mockEpochMs(): number {
-  lastMockEpochMs = Math.max(Date.now(), lastMockEpochMs + 1);
-  return lastMockEpochMs;
+function mockIrnSuffix(): string {
+  lastMockCounter = Math.max(Date.now(), lastMockCounter + 1);
+  return lastMockCounter.toString(36).toUpperCase().padStart(12, "0").slice(-12);
 }
 
 const MOCK_PROVINCES: Province[] = [

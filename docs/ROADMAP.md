@@ -11,14 +11,32 @@ These are **not** design decisions we can make. Each is an assumption currently 
 with a comment, to be resolved by probing sandbox with a real token. Record the answer here when you
 learn it.
 
+### Answered by a real production filing
+
+On 2026-10-09 a five-item production invoice was accepted (IRN `4987622DI1CFGJK395794`). Its
+payload settles several questions that had been guesses:
+
+| Question | Answer | Evidence |
+|---|---|---|
+| Is `totalValues: 0.00` accepted for ordinary sales? | **Yes.** All five items sent `0` alongside real `valueSalesExcludingST` figures | Accepted in production |
+| Is province matching case-sensitive? | **No.** `buyerProvince: "PUNJAB"` and `sellerProvince: "Punjab"` were accepted on the same invoice | Accepted in production |
+| Is `invoiceRefNo: ""` right for a sale invoice? | **Yes** | Accepted in production |
+| Is omitting `scenarioId` right in production? | **Yes** | Accepted in production |
+| What does an IRN actually look like? | `<NTN>DI<12 uppercase alphanumerics>` — e.g. `4987622DI1CFGJK395794`, 21 characters. **Not** the 13-digit epoch the spec's examples imply, nor the "22 digits" it states | Returned by FBR |
+| Does FBR require `fixedNotifiedValueOrRetailPrice` for 3rd Schedule goods? | **Yes** — error: *"Fixed/Notified Value or Retail Price is mandatory... where sale type is 3rd Schedule Goods"* | Production rejection |
+| Are 5 items on one invoice accepted? | **Yes** | Accepted in production |
+
+Nothing validates IRN format, so the wrong assumption caused no bug — but the mock now generates
+the real shape so it does not teach the wrong one.
+
+### Still open
+
 | Question | Current assumption | Where it lives | Status |
 |---|---|---|---|
-| Is `totalValues: 0.00` accepted for ordinary sales? | Yes — every official sample sends `0.00`, and error 0085 scopes the field to PFAD | `src/core/calc.ts` | Unverified |
-| What rounding mode does FBR use when it recalculates? | Half-up at 2dp | `src/core/calc.ts` (`round2`) | Unverified |
-| Does discount apply before or after tax? | Tax is charged on value after discount | `src/core/calc.ts` | Unverified |
-| For 3rd Schedule goods, is the tax base retail price × quantity? | Yes | `src/core/calc.ts` | Unverified |
+| What rounding mode does FBR use when it recalculates? | Half-up at 2dp | `src/core/calc.ts` (`round2`) | Unverified — the production invoice happened to divide exactly |
+| Does discount apply before or after tax? | Tax is charged on value after discount | `src/core/calc.ts` | Unverified — no discount has been filed yet |
+| For 3rd Schedule goods, is the tax base retail price × quantity? | Yes | `src/core/calc.ts` | Partly — FBR confirms the field is *required*, not yet the formula |
 | HTTP verb for `/dist/v1/Get_Reg_Type` and `/dist/v1/statl` | POST — the spec says GET but shows a JSON request body | `src/server/fbr-client.ts` | Unverified |
-| Is province matching case-sensitive? | Send the exact string from the `provinces` endpoint | `src/core/payload.ts` | Unverified |
 | Which STATL `status code` means Active? | Unknown; both of the spec's samples say "In-Active" | not yet used | Unverified |
 | Max items per invoice, payload size, rate limits | No limit assumed; reference data cached aggressively | — | Undocumented |
 | Does any scenario template actually pass? | Each is a best guess; FBR validates HS code / sale type / UoM / rate agreement server-side (errors 0052, 0099, 0101) | `src/core/scenario-templates.ts` | **Unverified — none has ever been posted** |

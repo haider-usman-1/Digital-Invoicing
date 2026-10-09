@@ -201,8 +201,9 @@ describe("submitting an invoice", () => {
     );
 
     expect(result.status).toBe("success");
-    // <sellerNTN>DI<13-digit epoch ms> — 22 characters for a 7-digit NTN.
-    expect(result.irn).toMatch(/^0786909DI\d{13}$/);
+    // Shaped like a real one: production returned 4987622DI1CFGJK395794 — twelve uppercase
+    // alphanumerics, not the 13-digit epoch the spec's examples imply.
+    expect(result.irn).toMatch(/^0786909DI[0-9A-Z]{12}$/);
   });
 
   test("gives two invoices filed back-to-back distinct invoice numbers", async () => {
@@ -454,6 +455,25 @@ describe("scenario templates", () => {
       body: JSON.stringify({ item: { hsCode: "1006.3010" } }),
     });
     expect(response.status).toBe(400);
+  });
+});
+
+describe("HS code lookups", () => {
+  test("refuses a partial code instead of relaying it to FBR", async () => {
+    // Typing one code used to fire a request per character, each answered with an empty list.
+    for (const partial of ["2", "29", "2942", "2942.", "q"]) {
+      const response = await authed(
+        `/api/uom-for-hs?accountId=${accountId}&env=sandbox&hsCode=${encodeURIComponent(partial)}`,
+      );
+      expect(response.status).toBe(400);
+    }
+  });
+
+  test("accepts a complete code", async () => {
+    const response = await authed(
+      `/api/uom-for-hs?accountId=${accountId}&env=sandbox&hsCode=2942.0000`,
+    );
+    expect(response.status).toBe(200);
   });
 });
 

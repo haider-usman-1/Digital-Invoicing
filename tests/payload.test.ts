@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildInvoicePayload, pakistanDate } from "../src/core/payload.ts";
+import { HS_CODE_PATTERN } from "../src/core/types.ts";
 import type { Account } from "../src/core/types.ts";
 
 const ACCOUNT: Account = {
@@ -211,5 +212,20 @@ describe("pakistanDate", () => {
 
   test("formats as YYYY-MM-DD with zero padding", () => {
     expect(pakistanDate(new Date("2026-01-05T06:00:00Z"))).toBe("2026-01-05");
+  });
+});
+
+describe("HS_CODE_PATTERN", () => {
+  test("accepts the shape every real FBR code uses", () => {
+    // Verified against all 7,809 codes the live itemdesccode endpoint returns.
+    for (const code of ["2942.0000", "2931.9090", "3808.9400", "8421.2100", "0101.2100"]) {
+      expect(HS_CODE_PATTERN.test(code)).toBe(true);
+    }
+  });
+
+  test("rejects the half-typed values that used to reach FBR", () => {
+    for (const partial of ["", "q", "2", "29", "294", "2942", "2942.", "2942.00", "29420000"]) {
+      expect(HS_CODE_PATTERN.test(partial)).toBe(false);
+    }
   });
 });

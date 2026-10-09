@@ -35,9 +35,10 @@ import {
 import { deleteAccount, findAccount, loadAccounts, redactAccount, tokenFor, upsertAccount } from "./store.ts";
 import { precheckInvoice, submitInvoice } from "./submit.ts";
 import { loadTemplate, resetTemplate, saveTemplate } from "./templates.ts";
-import { dataDir, ensureDataDir } from "./paths.ts";
+import { dataDir, ensureDataDir, fallbackLogFile, legacyDataDir } from "./paths.ts";
 import { SCENARIOS, expectedBuyerRegistrationType } from "../core/scenarios.ts";
 import { pakistanDate } from "../core/payload.ts";
+import { HS_CODE_PATTERN } from "../core/types.ts";
 import type { Account, Env } from "../core/types.ts";
 
 const PORT = Number(process.env.PORT ?? 7345);
@@ -214,6 +215,15 @@ function start() {
 
           const hsCode = url.searchParams.get("hsCode")?.trim();
           if (!hsCode) return Response.json({ error: "Pick an HS code first." }, { status: 400 });
+
+          // Refuse partial codes rather than relaying them. FBR answers them with an empty list,
+          // so the only effect is load on their gateway.
+          if (!HS_CODE_PATTERN.test(hsCode)) {
+            return Response.json(
+              { error: "An HS code looks like 2942.0000 — four digits, a dot, four digits." },
+              { status: 400 },
+            );
+          }
 
           const result = await loadUomForHsCode(client, resolved.token, hsCode);
           return result.ok
@@ -405,14 +415,17 @@ const url = `http://${LOOPBACK_HOST}:${PORT}`;
  */
 function reportStartupFailure(message: string): void {
   console.error(message);
-  try {
-    appendFileSync(
-      join(ensureDataDir(), "startup-error.log"),
-      `${new Date().toISOString()} ${message}\n`,
-      "utf8",
-    );
-  } catch {
-    // If even that fails there is nothing further to try.
+  const line = `${new Date().toISOString()} ${message}\n`;
+
+  // The data directory is itself a likely cause of failure now that it sits beside the executable,
+  // so fall back to the temp directory rather than losing the only explanation the user will get.
+  for (const target of [() => join(ensureDataDir(), "startup-error.log"), fallbackLogFile]) {
+    try {
+      appendFileSync(target(), line, "utf8");
+      return;
+    } catch {
+      // Try the next location.
+    }
   }
 }
 
@@ -421,6 +434,15 @@ try {
   console.log(`FBR Invoicing is running at ${url}`);
   console.log(`Mode: ${MOCK ? "MOCK (no calls to FBR)" : "live"}`);
   console.log(`Data: ${dataDir()}`);
+
+  const legacy = legacyDataDir();
+  if (legacy) {
+    console.log(
+      `\nNOTE: data used to be kept in ${legacy}\n` +
+        `      It now lives beside the app. To bring your accounts and history across, copy the\n` +
+        `      contents of that folder into ${dataDir()} and restart.\n`,
+    );
+  }
   if (!DEV) openBrowser(url);
 } catch (error) {
   // Almost certainly EADDRINUSE from a second double-click. Point the user at the instance that is

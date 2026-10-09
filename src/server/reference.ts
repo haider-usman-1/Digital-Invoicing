@@ -30,7 +30,10 @@ async function cached<T>(
   if (hit !== undefined) return { ok: true, data: hit };
 
   const result = await fetcher();
-  if (result.ok) writeCache(key, result.data);
+  // An empty list is not worth remembering for a week: it usually means the question was wrong
+  // (a partial HS code, say) rather than that FBR genuinely has nothing to say.
+  const worthCaching = result.ok && (!Array.isArray(result.data) || result.data.length > 0);
+  if (worthCaching) writeCache(key, result.data);
   return result;
 }
 

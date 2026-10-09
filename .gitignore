@@ -2,7 +2,8 @@ node_modules/
 dist/
 *.log
 
-# Local app data — contains FBR API tokens. Never commit.
+# Local app data, now kept beside the project/executable. Contains FBR API tokens. Never commit.
+data/
 accounts.json
 reference-cache.json
 submissions.ndjson

@@ -29,14 +29,23 @@ which is on the roadmap.
 - **Closing the browser tab doesn't stop the app.** Use the **Quit** button in the top right.
 - **Double-clicking the icon again is safe.** If the app is already running it just reopens the
   browser tab rather than starting a second copy.
-- Your data lives in `%APPDATA%\fbr-di\`:
+- Your data lives in a `data` folder **next to the .exe**:
   - `accounts.json` — seller details and your FBR tokens
   - `submissions.ndjson` — a record of every invoice submitted
   - `reference-cache.json` — FBR's HS code and rate lists, cached
+  - `scenario-templates.json` — your saved scenario template corrections
   - `startup-error.log` — only appears if the app failed to start
 
-**Back up `%APPDATA%\fbr-di\` if you care about the submission history.** Uninstalling means
-deleting the `.exe`; that folder is the only other thing the app creates.
+**Keep the .exe and its `data` folder together.** Moving them as a pair moves the whole
+installation — accounts, history and all. That also means two things to watch:
+
+- **Put it somewhere you can write to.** Your Desktop or Documents is fine; `Program Files` is not,
+  and the app will say so rather than failing silently.
+- **`accounts.json` holds your FBR tokens**, which are valid for five years. Don't put the folder on
+  a shared drive or anywhere colleagues can read it.
+
+Back up the `data` folder if you care about the submission history. Uninstalling means deleting the
+`.exe` and that folder.
 
 ## Before the first real invoice
 
@@ -70,7 +79,8 @@ capped at 10% of last month's sales across all amendments combined.
 
 ## If something goes wrong
 
-**Nothing happens when you double-click.** Check `%APPDATA%\fbr-di\startup-error.log`. The usual
+**Nothing happens when you double-click.** Check `data\startup-error.log` next to the .exe (or
+`%TEMP%\fbr-di-startup-error.log` if the app couldn't write there at all). The usual
 cause is another program holding port 7345; set a different one by creating a shortcut whose target
 is `FBR-Invoicing.exe` with the environment variable `PORT` set.
 
