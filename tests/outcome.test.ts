@@ -91,12 +91,10 @@ describe("interpretPostResponse", () => {
   });
 
   test("never reports success without an IRN, even if every status says Valid", () => {
-    // Defensive: a success is only a success if we have the number that proves it.
-    const outcome = interpretPostResponse({
-      ...SPEC_POST_SUCCESS,
-      invoiceNumber: undefined,
-    });
-    expect(outcome.kind).not.toBe("success");
+    // Defensive: a success is only a success if we have the number that proves it. FBR omits the
+    // key rather than nulling it, so the fixture does too.
+    const { invoiceNumber, ...withoutIrn } = SPEC_POST_SUCCESS;
+    expect(interpretPostResponse(withoutIrn).kind).not.toBe("success");
   });
 
   test("treats a blank IRN the same as a missing one", () => {
