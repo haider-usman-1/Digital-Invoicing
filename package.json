@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "build:win": "bun build --compile --target=bun-windows-x64 --windows-hide-console src/server/index.ts --outfile dist/FBR-Invoicing.exe",
     "test:ui": "bun test --preload ./tests-ui/setup.ts tests-ui",
-    "test:unit": "bun test tests/"
+    "test:unit": "bun test tests/",
+    "build:win:icon": "bun build --compile --target=bun-windows-x64 --windows-hide-console --windows-icon=assets/icon.ico --windows-title=\"FBR Invoicing\" --windows-description=\"Files sales invoices to FBR Digital Invoicing\" --windows-publisher=\"FBR Digital Invoicing\" --windows-version=0.1.0.0 src/server/index.ts --outfile dist/FBR-Invoicing.exe"
   },
   "dependencies": {
     "react": "^19.2.0",

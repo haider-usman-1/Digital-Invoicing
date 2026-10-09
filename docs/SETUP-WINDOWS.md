@@ -1,15 +1,43 @@
 # Running it on Windows
 
-## Building the executable (on the Mac)
+## Building the executable
+
+Either route produces `dist/FBR-Invoicing.exe` — a single self-contained file, around 83 MB.
+Nothing needs to be installed on the Windows machine to *run* it: no Bun, no Node, no runtime.
+
+### From the Mac — quick, but no icon
 
 ```sh
 bun run build:win
 ```
 
-Produces `dist/FBR-Invoicing.exe` — a single self-contained file, around 83 MB. Nothing needs to be
-installed on the Windows machine: no Bun, no Node, no runtime.
+The executable works fully, but Windows shows it with the generic blank-document icon and it has no
+file properties. That is not a limitation of this project: Bun refuses `--windows-icon`,
+`--windows-title` and the rest unless it is compiling *on* Windows, with
+`error: Using --windows-icon is only available when compiling on Windows`.
 
-Copy that one file across.
+### On the Windows machine — with the icon
+
+One-off setup:
+
+```powershell
+powershell -c "irm bun.sh/install.ps1 | iex"
+git clone <repo-url>
+cd Digital-Invoicing
+bun install
+```
+
+Then for every build:
+
+```powershell
+bun run build:win:icon
+```
+
+This embeds the app icon and sets the file properties Windows shows under *Right-click →
+Properties → Details*: product name, description, company and version.
+
+Copy the resulting `.exe` wherever you want to run it — remembering that its `data` folder travels
+with it.
 
 ## First run
 

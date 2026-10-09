@@ -14,8 +14,8 @@
  * Set FBR_DATA_DIR to override the location entirely.
  */
 
-import { accessSync, constants, existsSync, mkdirSync } from "node:fs";
-import { homedir, platform, tmpdir } from "node:os";
+import { accessSync, constants, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 const DATA_DIR_NAME = "data";
@@ -60,26 +60,6 @@ export function dataFile(name: string): string {
 /** Somewhere to report a startup failure when the data directory itself is the problem. */
 export function fallbackLogFile(): string {
   return join(tmpdir(), "fbr-di-startup-error.log");
-}
-
-/**
- * The pre-0.2 location, for anyone upgrading.
- *
- * Returns a path only when there is data there and nothing here yet, so an existing install isn't
- * silently abandoned with the user wondering where their accounts went.
- */
-export function legacyDataDir(): string | null {
-  const legacy =
-    platform() === "win32"
-      ? join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "fbr-di")
-      : platform() === "darwin"
-        ? join(homedir(), "Library", "Application Support", "fbr-di")
-        : join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "fbr-di");
-
-  if (process.env.FBR_DATA_DIR) return null;
-  if (!existsSync(join(legacy, ACCOUNTS_FILE))) return null;
-  if (existsSync(join(dataDir(), ACCOUNTS_FILE))) return null;
-  return legacy;
 }
 
 export const ACCOUNTS_FILE = "accounts.json";

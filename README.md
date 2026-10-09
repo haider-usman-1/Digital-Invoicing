@@ -38,8 +38,13 @@ bun install
 bun run dev        # mock mode, no network, no token needed → http://127.0.0.1:7345
 bun test
 bun run typecheck
-bun run build:win  # single Windows .exe, cross-compiled from macOS
+bun run build:win       # single Windows .exe, cross-compiled from macOS (no icon)
+bun run build:win:icon  # same, with icon and file properties — only runs ON Windows
 ```
+
+Bun rejects `--windows-icon` and the version-metadata flags unless it is compiling on Windows, so
+the icon needs a Windows build. `assets/icon.ico` is checked in; regenerate it with
+`python3 scripts/make-icon.py` after changing the artwork.
 
 `bun run dev` starts in **mock mode**: FBR is never contacted, and canned responses cover every
 branch. Put one of these words in a line item's description to exercise a path:

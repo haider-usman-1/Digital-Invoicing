@@ -82,8 +82,12 @@ invoices a day.
 your PC" on first run and Defender occasionally flags Bun-compiled binaries heuristically. Walked
 through in `SETUP-WINDOWS.md`, but a signing certificate is the real fix.
 
-**App icon and version metadata.** Not possible when cross-compiling from macOS — these need a
-Windows build host. Add a Windows CI runner to get them.
+**App icon and version metadata on a Mac-built exe.** Bun supports `--windows-icon`,
+`--windows-title`, `--windows-version` and friends, but refuses them unless it is compiling on
+Windows (`error: Using --windows-icon is only available when compiling on Windows`). The icon is
+built and checked in at `assets/icon.ico`, and `bun run build:win:icon` applies it — run on the
+Windows machine. A `windows-latest` CI runner would remove that manual step if the release process
+ever needs to be hands-off.
 
 **IP whitelisting guidance.** FBR only accepts calls from IPs whitelisted in IRIS (1–3 per
 registration, approved within about 2 working hours). The user deferred this; it will need

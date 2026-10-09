@@ -35,7 +35,7 @@ import {
 import { deleteAccount, findAccount, loadAccounts, redactAccount, tokenFor, upsertAccount } from "./store.ts";
 import { precheckInvoice, submitInvoice } from "./submit.ts";
 import { loadTemplate, resetTemplate, saveTemplate } from "./templates.ts";
-import { dataDir, ensureDataDir, fallbackLogFile, legacyDataDir } from "./paths.ts";
+import { dataDir, ensureDataDir, fallbackLogFile } from "./paths.ts";
 import { SCENARIOS, expectedBuyerRegistrationType } from "../core/scenarios.ts";
 import { pakistanDate } from "../core/payload.ts";
 import { HS_CODE_PATTERN } from "../core/types.ts";
@@ -434,15 +434,6 @@ try {
   console.log(`FBR Invoicing is running at ${url}`);
   console.log(`Mode: ${MOCK ? "MOCK (no calls to FBR)" : "live"}`);
   console.log(`Data: ${dataDir()}`);
-
-  const legacy = legacyDataDir();
-  if (legacy) {
-    console.log(
-      `\nNOTE: data used to be kept in ${legacy}\n` +
-        `      It now lives beside the app. To bring your accounts and history across, copy the\n` +
-        `      contents of that folder into ${dataDir()} and restart.\n`,
-    );
-  }
   if (!DEV) openBrowser(url);
 } catch (error) {
   // Almost certainly EADDRINUSE from a second double-click. Point the user at the instance that is
