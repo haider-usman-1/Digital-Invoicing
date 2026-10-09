@@ -1,11 +1,12 @@
 /**
- * The submission flow: pre-check with FBR, then file, then record what happened.
+ * Two ways to send an invoice to FBR: check it, or file it.
  *
- * Presented to the user as ONE action. Exposing the pre-check as a separate button would invite
- * skipping it, and its whole value is never creating an ambiguous filing for a payload that was
- * going to be rejected anyway — at a few invoices a day the extra call costs nothing.
+ * Filing always pre-checks first, as one user action — the extra call is free at a few invoices a
+ * day and the payoff is never creating an ambiguous filing for a payload that was going to be
+ * rejected anyway. `precheckInvoice` exposes that same check on its own, for when you want to know
+ * an invoice is good without committing to it.
  *
- * The pre-check is not treated as a guarantee: FBR can still reject on the real post, so that path
+ * A pre-check is never treated as a guarantee. FBR can still reject on the real post, so that path
  * is handled too.
  */
 
@@ -40,38 +41,90 @@ export type SubmitResponse =
     }
   | { status: "error"; message: string };
 
-export async function submitInvoice(
-  client: FbrClient,
+/** Outcome of a check that deliberately stops short of filing. */
+export type PrecheckResponse =
+  | { status: "valid" }
+  | { status: "rejected"; errors: RejectionError[] }
+  | { status: "error"; message: string };
+
+/**
+ * Shared preparation for both the check-only and the file-it-for-real paths.
+ *
+ * Extracted so the two cannot drift: a pre-check that built its payload even slightly differently
+ * from the real submission would be worse than no pre-check at all, because it would pass and then
+ * the filing would fail.
+ */
+function prepare(
   account: Account,
   request: SubmitRequest,
-): Promise<SubmitResponse> {
+):
+  | { ok: true; token: string; payload: ReturnType<typeof buildInvoicePayload> }
+  | { ok: false; message: string } {
   const credentials = tokenFor(account, request.env);
-  if (!credentials.ok) return { status: "error", message: credentials.reason };
+  if (!credentials.ok) return { ok: false, message: credentials.reason };
 
   if (request.items.length === 0) {
-    return { status: "error", message: "Add at least one line item before submitting." };
+    return { ok: false, message: "Add at least one line item before submitting." };
   }
 
   // FBR requires a scenario in sandbox and refuses one in production; the payload builder enforces
   // the latter, but a missing scenario in sandbox is worth catching before we spend a call.
   if (request.env === "sandbox" && !request.scenarioId?.trim()) {
-    return {
-      status: "error",
-      message: "Pick a scenario. FBR requires one for every sandbox invoice.",
-    };
+    return { ok: false, message: "Pick a scenario. FBR requires one for every sandbox invoice." };
   }
 
-  const payload = buildInvoicePayload({
-    env: request.env,
-    account,
-    buyer: request.buyer,
-    invoiceDate: request.invoiceDate,
-    items: request.items,
-    ...(request.scenarioId ? { scenarioId: request.scenarioId } : {}),
-  });
+  return {
+    ok: true,
+    token: credentials.token,
+    payload: buildInvoicePayload({
+      env: request.env,
+      account,
+      buyer: request.buyer,
+      invoiceDate: request.invoiceDate,
+      items: request.items,
+      ...(request.scenarioId ? { scenarioId: request.scenarioId } : {}),
+    }),
+  };
+}
+
+/**
+ * Runs FBR's pre-check and stops.
+ *
+ * `validateinvoicedata` files nothing, so this is always safe to repeat and never produces an
+ * uncertain state. Nothing is written to the submission log either: the log records attempts to
+ * file, and a check is not one. It therefore counts for nothing toward scenario completion, which
+ * is correct — only a successful post moves an account toward its production token.
+ */
+export async function precheckInvoice(
+  client: FbrClient,
+  account: Account,
+  request: SubmitRequest,
+): Promise<PrecheckResponse> {
+  const prepared = prepare(account, request);
+  if (!prepared.ok) return { status: "error", message: prepared.message };
+
+  const response = await client.validateInvoice(prepared.token, request.env, prepared.payload);
+  if (response.transport !== "ok") {
+    return { status: "error", message: `${response.reason} Nothing has been filed.` };
+  }
+
+  const outcome = interpretValidateResponse(response.body);
+  if (outcome.kind === "valid") return { status: "valid" };
+  if (outcome.kind === "rejected") return { status: "rejected", errors: outcome.errors };
+  return { status: "error", message: `${outcome.reason} Nothing has been filed.` };
+}
+
+export async function submitInvoice(
+  client: FbrClient,
+  account: Account,
+  request: SubmitRequest,
+): Promise<SubmitResponse> {
+  const prepared = prepare(account, request);
+  if (!prepared.ok) return { status: "error", message: prepared.message };
+  const { token, payload } = prepared;
 
   // --- Pre-check. This endpoint does not file anything, so a failure here is always safe. -------
-  const precheck = await client.validateInvoice(credentials.token, request.env, payload);
+  const precheck = await client.validateInvoice(token, request.env, payload);
   if (precheck.transport !== "ok") {
     return { status: "error", message: `${precheck.reason} Nothing has been filed — try again.` };
   }
@@ -96,7 +149,7 @@ export async function submitInvoice(
     payload,
   });
 
-  const filing = await client.postInvoice(credentials.token, request.env, payload);
+  const filing = await client.postInvoice(token, request.env, payload);
 
   if (filing.transport === "not-filed") {
     // A 401 is decided at the gateway before processing, so this is a definite failure.

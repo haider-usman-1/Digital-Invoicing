@@ -147,6 +147,7 @@ describe("accounts", () => {
     );
 
     expect(accounts).toHaveLength(1);
+    // Tokens must never reach the browser, for either account.
     expect(JSON.stringify(accounts)).not.toContain("sandbox-token");
     expect(accounts[0]!.hasSandboxToken).toBe(true);
     expect(accounts[0]!.hasProductionToken).toBe(false);
@@ -332,6 +333,18 @@ describe("the served page", () => {
     expect(html).toMatch(/<link[^>]+href="[^"]+\.css"/);
   });
 
+  test("serves a favicon that the bundler actually rewrote and can resolve", async () => {
+    // The href is rewritten by the bundler, so a broken asset pipeline would leave a link
+    // pointing at a 404 — invisible except as a blank tab icon.
+    const html = await (await fetch(BASE)).text();
+    const href = /<link[^>]+rel="icon"[^>]+href="([^"]+)"/.exec(html)?.[1];
+    expect(href).toBeTruthy();
+
+    const icon = await fetch(`${BASE}${href}`);
+    expect(icon.status).toBe(200);
+    expect(icon.headers.get("content-type")).toContain("image/svg+xml");
+  });
+
   test("returns 404 for an unknown path", async () => {
     expect((await fetch(`${BASE}/nope`)).status).toBe(404);
   });
@@ -395,16 +408,19 @@ describe("scenario templates", () => {
       }),
     });
 
-    // Read it back through a different account: a correction is global, because FBR's requirements
-    // for a scenario don't vary by registration.
-    const { accounts } = await json<{ accounts: Array<{ id: string; label: string }> }>(
-      await authed("/api/accounts"),
-    );
-    const other = accounts.find((a) => a.id !== accountId) ?? accounts[0]!;
-    await authed("/api/accounts", {
-      method: "POST",
-      body: JSON.stringify({ id: other.id, label: other.label, sellerNTNCNIC: "7327556", eligibleScenarios: ["SN001"] }),
-    });
+    // Read it back through a genuinely different account: a correction is global, because FBR's
+    // requirements for a scenario don't vary by registration.
+    const other = await json<{ account: { id: string } }>(
+      await authed("/api/accounts", {
+        method: "POST",
+        body: JSON.stringify({
+          label: "Zenith Mills",
+          sellerNTNCNIC: "7327556",
+          sandboxToken: "sandbox-token-2",
+          eligibleScenarios: ["SN001"],
+        }),
+      }),
+    ).then((r) => r.account);
 
     const { eligible } = await json<{
       eligible: Array<{ id: string; template: { customised: boolean; item: { hsCode: string } } }>;
@@ -436,6 +452,81 @@ describe("scenario templates", () => {
     const response = await authed("/api/scenario-templates/SN005", {
       method: "POST",
       body: JSON.stringify({ item: { hsCode: "1006.3010" } }),
+    });
+    expect(response.status).toBe(400);
+  });
+});
+
+describe("checking an invoice without filing it", () => {
+  test("reports that FBR would accept it", async () => {
+    const result = await json<{ status: string }>(
+      await authed("/api/invoice/validate", { method: "POST", body: JSON.stringify(invoice("widget")) }),
+    );
+    expect(result.status).toBe("valid");
+  });
+
+  test("records nothing, so a check can be repeated freely", async () => {
+    const before = await json<{ submissions: unknown[] }>(await authed("/api/submissions"));
+
+    await authed("/api/invoice/validate", { method: "POST", body: JSON.stringify(invoice("widget")) });
+    await authed("/api/invoice/validate", { method: "POST", body: JSON.stringify(invoice("widget")) });
+
+    const after = await json<{ submissions: unknown[]; needsAttention: unknown[] }>(
+      await authed("/api/submissions"),
+    );
+    // Unchanged, not empty: earlier tests in this file leave real submissions behind. What matters
+    // is that a check adds nothing of its own.
+    expect(after.submissions).toHaveLength(before.submissions.length);
+  });
+
+  test("does not count toward scenario completion", async () => {
+    // Only a successful POST moves an account toward its production token. Counting a passing
+    // check would show false progress and leave the user waiting for a token that never comes.
+    await authed("/api/invoice/validate", {
+      method: "POST",
+      body: JSON.stringify(invoice("widget", "SN002")),
+    });
+
+    const { eligible } = await json<{ eligible: Array<{ id: string; completed: boolean }> }>(
+      await authed(`/api/scenarios?accountId=${accountId}`),
+    );
+    expect(eligible.find((s) => s.id === "SN002")!.completed).toBe(false);
+  });
+
+  test("surfaces the same rejections the filing path would", async () => {
+    const result = await json<{ status: string; errors: Array<{ code: string }> }>(
+      await authed("/api/invoice/validate", {
+        method: "POST",
+        body: JSON.stringify(invoice("REJECT me")),
+      }),
+    );
+    expect(result.status).toBe("rejected");
+    expect(result.errors[0]!.code).toBe("0046");
+  });
+
+  test("applies the same request checks as filing", async () => {
+    const noScenario = await json<{ status: string; message: string }>(
+      await authed("/api/invoice/validate", {
+        method: "POST",
+        body: JSON.stringify({ ...invoice("widget"), scenarioId: "" }),
+      }),
+    );
+    expect(noScenario.status).toBe("error");
+    expect(noScenario.message).toMatch(/scenario/i);
+
+    const noItems = await json<{ status: string; message: string }>(
+      await authed("/api/invoice/validate", {
+        method: "POST",
+        body: JSON.stringify({ ...invoice("widget"), items: [] }),
+      }),
+    );
+    expect(noItems.status).toBe("error");
+  });
+
+  test("rejects an unknown account", async () => {
+    const response = await authed("/api/invoice/validate", {
+      method: "POST",
+      body: JSON.stringify({ ...invoice("widget"), accountId: "nope" }),
     });
     expect(response.status).toBe(400);
   });

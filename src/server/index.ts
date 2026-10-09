@@ -33,7 +33,7 @@ import {
   isLocalRequest,
 } from "./security.ts";
 import { deleteAccount, findAccount, loadAccounts, redactAccount, tokenFor, upsertAccount } from "./store.ts";
-import { submitInvoice } from "./submit.ts";
+import { precheckInvoice, submitInvoice } from "./submit.ts";
 import { loadTemplate, resetTemplate, saveTemplate } from "./templates.ts";
 import { dataDir, ensureDataDir } from "./paths.ts";
 import { SCENARIOS, expectedBuyerRegistrationType } from "../core/scenarios.ts";
@@ -242,6 +242,22 @@ function start() {
           const registrationType = raw === "registered" ? "Registered" : "Unregistered";
 
           return Response.json({ registrationType, raw: result.data });
+        }),
+      },
+
+      /*
+       * Checks an invoice against FBR without filing it.
+       *
+       * Hits validateinvoicedata, which records nothing, so this is safe to repeat and can never
+       * leave an invoice in an unknown state.
+       */
+      "/api/invoice/validate": {
+        POST: guard(async (request) => {
+          const body = (await request.json()) as { accountId?: string } & Record<string, unknown>;
+          const account = body.accountId ? findAccount(loadAccounts(), body.accountId) : undefined;
+          if (!account) return Response.json({ error: "Unknown account." }, { status: 400 });
+
+          return Response.json(await precheckInvoice(client, account, body as never));
         }),
       },
 

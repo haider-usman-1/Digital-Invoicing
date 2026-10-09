@@ -90,6 +90,12 @@ type SubmitResult =
   | { status: "uncertain"; reason: string; portalSearch: Record<string, string | number> }
   | { status: "error"; message: string };
 
+/** A check never files, so it has no IRN and no uncertain state. */
+type CheckResult =
+  | { status: "valid" }
+  | { status: "rejected"; errors: Array<{ plain: string; itemSNo: string | null; field: string | null }> }
+  | { status: "error"; message: string };
+
 function blankItem(): ItemDraft {
   return {
     key: crypto.randomUUID(),
@@ -160,7 +166,9 @@ export function NewInvoice({
   const [uomByHs, setUomByHs] = useState<Record<string, UnitOfMeasure[]>>({});
 
   const [submitting, setSubmitting] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<SubmitResult | null>(null);
+  const [checkResult, setCheckResult] = useState<CheckResult | null>(null);
   const [templateSaved, setTemplateSaved] = useState<string | null>(null);
 
   // --- Reference data ------------------------------------------------------
@@ -340,11 +348,8 @@ export function NewInvoice({
     setItems((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)));
   }
 
-  async function submit() {
-    if (!account) return;
-    setSubmitting(true);
-    setResult(null);
-
+  /** The request body both actions send, so a check can never test something different. */
+  function invoiceRequest() {
     const payloadItems: FbrInvoiceItem[] = items.map((item, index) => {
       const { applied, saleTypeDesc } = computed[index]!;
       return {
@@ -368,22 +373,51 @@ export function NewInvoice({
       };
     });
 
+    return {
+      accountId: account!.id,
+      env,
+      buyer,
+      invoiceDate,
+      internalInvoiceNumber,
+      ...(env === "sandbox" && scenarioId ? { scenarioId } : {}),
+      items: payloadItems,
+    };
+  }
+
+  async function submit() {
+    if (!account) return;
+    setSubmitting(true);
+    setResult(null);
+    setCheckResult(null);
+
     try {
-      const response = await api.post<SubmitResult>("/api/invoice/submit", {
-        accountId: account.id,
-        env,
-        buyer,
-        invoiceDate,
-        internalInvoiceNumber,
-        ...(env === "sandbox" && scenarioId ? { scenarioId } : {}),
-        items: payloadItems,
-      });
-      setResult(response);
+      setResult(await api.post<SubmitResult>("/api/invoice/submit", invoiceRequest()));
       onSubmitted();
     } catch (e) {
       setResult({ status: "error", message: e instanceof Error ? e.message : String(e) });
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  /**
+   * Asks FBR whether the invoice would be accepted, without filing it.
+   *
+   * Nothing is recorded by FBR or logged here, so this is free to repeat — useful for working
+   * through a scenario's rejections, and for a dry run before an irreversible production filing.
+   */
+  async function check() {
+    if (!account) return;
+    setChecking(true);
+    setResult(null);
+    setCheckResult(null);
+
+    try {
+      setCheckResult(await api.post<CheckResult>("/api/invoice/validate", invoiceRequest()));
+    } catch (e) {
+      setCheckResult({ status: "error", message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setChecking(false);
     }
   }
 
@@ -465,9 +499,9 @@ export function NewInvoice({
     );
   }
 
-  const fieldErrors = new Set(
-    result?.status === "rejected" ? result.errors.map((e) => e.field).filter(Boolean) : [],
-  );
+  const rejected =
+    result?.status === "rejected" ? result.errors : checkResult?.status === "rejected" ? checkResult.errors : [];
+  const fieldErrors = new Set(rejected.map((e) => e.field).filter(Boolean));
 
   return (
     <>
@@ -498,6 +532,7 @@ export function NewInvoice({
 
       {templateSaved && <div className="note ok">{templateSaved}</div>}
 
+      {checkResult && <CheckPanel result={checkResult} />}
       {result && <ResultPanel result={result} />}
 
       <div className="card">
@@ -649,15 +684,18 @@ export function NewInvoice({
         )}
 
         <div className="actions">
-          <button className="primary" onClick={() => void submit()} disabled={submitting}>
+          <button className="primary" onClick={() => void submit()} disabled={submitting || checking}>
             {submitting
-              ? "Checking with FBR…"
+              ? "Sending to FBR…"
               : env === "production"
                 ? "File this invoice with FBR"
                 : "Submit to sandbox"}
           </button>
+          <button onClick={() => void check()} disabled={submitting || checking}>
+            {checking ? "Checking…" : "Check without filing"}
+          </button>
           <span className="hint">
-            FBR pre-checks the invoice before it's filed, so a mistake is caught without creating a record.
+            Filing pre-checks the invoice anyway, so a mistake is caught without creating a record.
           </span>
         </div>
 
@@ -946,6 +984,42 @@ function Amount({
         </button>
       )}
     </Field>
+  );
+}
+
+function CheckPanel({ result }: { result: CheckResult }) {
+  if (result.status === "valid") {
+    return (
+      <div className="note ok">
+        <strong>FBR accepted this invoice — but it has NOT been filed</strong>
+        <span>
+          The check passed, so filing it should succeed. Press the submit button when you're ready.
+        </span>
+      </div>
+    );
+  }
+
+  if (result.status === "rejected") {
+    return (
+      <div className="note error">
+        <strong>FBR would reject this invoice — nothing was filed</strong>
+        <ul>
+          {result.errors.map((error, i) => (
+            <li key={i}>
+              {error.itemSNo && <>Item {error.itemSNo}: </>}
+              {error.plain}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  return (
+    <div className="note error">
+      <strong>Couldn't check this invoice</strong>
+      <span>{result.message}</span>
+    </div>
   );
 }
 

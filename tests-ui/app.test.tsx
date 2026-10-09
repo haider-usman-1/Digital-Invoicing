@@ -68,6 +68,7 @@ function stubApi(overrides: Record<string, unknown> = {}) {
     "/api/reference": REFERENCE,
     "/api/rates": { rates: [{ ratE_ID: 413, ratE_DESC: "18%", ratE_VALUE: 18 }] },
     "/api/uom-for-hs": { unitsOfMeasure: [{ uoM_ID: 2, description: "KG" }] },
+    "/api/invoice/validate": { status: "valid" },
     "/api/scenarios": {
       eligible: [
         {
@@ -165,6 +166,54 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Environment"), { target: { value: "production" } });
 
     await waitFor(() => expect(screen.queryByText("Scenario")).toBeNull());
+  });
+});
+
+describe("checking without filing", () => {
+  test("offers a check alongside the submit button", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Invoice")).toBeTruthy());
+    expect(screen.getByText("Check without filing")).toBeTruthy();
+  });
+
+  test("says the invoice passed and was NOT filed", async () => {
+    // The distinction matters: a cheerful green "accepted" that the user reads as "filed" would be
+    // worse than no check at all.
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Invoice")).toBeTruthy());
+
+    fireEvent.click(screen.getByText("Check without filing"));
+    await waitFor(() => expect(screen.getByText(/has NOT been filed/)).toBeTruthy());
+    // No IRN is shown, because none exists.
+    expect(screen.queryByText(/Filed with FBR/)).toBeNull();
+  });
+
+  test("shows what FBR objected to and highlights the field", async () => {
+    stubApi({
+      "/api/invoice/validate": {
+        status: "rejected",
+        errors: [{ plain: "The tax rate is missing.", itemSNo: "1", field: "rate" }],
+      },
+    });
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Invoice")).toBeTruthy());
+
+    fireEvent.click(screen.getByText("Check without filing"));
+    await waitFor(() => expect(screen.getByText(/would reject this invoice/)).toBeTruthy());
+    expect(screen.getByText(/The tax rate is missing/)).toBeTruthy();
+    expect((screen.getByLabelText(/^Rate$/) as HTMLSelectElement).className).toContain("invalid");
+  });
+
+  test("reports a failure to reach FBR without claiming anything was filed", async () => {
+    stubApi({
+      "/api/invoice/validate": { status: "error", message: "Couldn't reach FBR (timed out). Nothing has been filed." },
+    });
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Invoice")).toBeTruthy());
+
+    fireEvent.click(screen.getByText("Check without filing"));
+    await waitFor(() => expect(screen.getByText(/Couldn't check this invoice/)).toBeTruthy());
+    expect(screen.getByText(/Nothing has been filed/)).toBeTruthy();
   });
 });
 
