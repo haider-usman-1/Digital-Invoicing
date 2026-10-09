@@ -5,11 +5,11 @@
   "description": "Local app for filing sales invoices to Pakistan's FBR Digital Invoicing system",
   "type": "module",
   "scripts": {
-    "dev": "FBR_MOCK=1 bun --hot src/server/index.ts",
+    "dev": "FBR_MOCK=1 FBR_DEV=1 bun --hot src/server/index.ts",
     "start": "bun src/server/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "build:win": "bun build --compile --target=bun-windows-x64 src/server/index.ts --outfile dist/FBR-Invoicing.exe"
+    "build:win": "bun build --compile --target=bun-windows-x64 --windows-hide-console src/server/index.ts --outfile dist/FBR-Invoicing.exe"
   },
   "dependencies": {
     "react": "^19.2.0",
@@ -19,8 +19,6 @@
     "@types/bun": "^1.4.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "tailwindcss": "^4.1.18",
-    "bun-plugin-tailwind": "^0.1.0",
     "typescript": "^5.9.3"
   }
 }

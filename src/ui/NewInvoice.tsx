@@ -1,0 +1,812 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { api, currentSession } from "./api.ts";
+import { Field } from "./Settings.tsx";
+import { computeLine, round2 } from "../core/calc.ts";
+import { SCENARIOS, expectedBuyerRegistrationType, findScenario } from "../core/scenarios.ts";
+import type { UiAccount } from "./App.tsx";
+import type {
+  BuyerRegistrationType,
+  Env,
+  FbrInvoiceItem,
+  HsCode,
+  Province,
+  SaleTypeRate,
+  TransactionType,
+  UnitOfMeasure,
+} from "../core/types.ts";
+
+/** The amounts the user may override. Everything else is derived or typed directly. */
+const OVERRIDABLE = [
+  "valueSalesExcludingST",
+  "salesTaxApplicable",
+  "totalValues",
+  "furtherTax",
+  "extraTax",
+  "fedPayable",
+  "salesTaxWithheldAtSource",
+] as const;
+
+type Overridable = (typeof OVERRIDABLE)[number];
+
+interface ItemDraft {
+  key: string;
+  hsCode: string;
+  productDescription: string;
+  transTypeId: number | null;
+  rateDesc: string;
+  uoM: string;
+  quantity: string;
+  unitPrice: string;
+  discount: string;
+  retailPrice: string;
+  overrides: Partial<Record<Overridable, string>>;
+}
+
+interface Reference {
+  provinces: Province[];
+  hsCodes: HsCode[];
+  transactionTypes: TransactionType[];
+  unitsOfMeasure: UnitOfMeasure[];
+}
+
+type SubmitResult =
+  | { status: "success"; irn: string; dated: string | null }
+  | { status: "rejected"; stage: "precheck" | "filing"; errors: Array<{ plain: string; itemSNo: string | null; field: string | null }> }
+  | { status: "uncertain"; reason: string; portalSearch: Record<string, string | number> }
+  | { status: "error"; message: string };
+
+function blankItem(): ItemDraft {
+  return {
+    key: crypto.randomUUID(),
+    hsCode: "",
+    productDescription: "",
+    transTypeId: null,
+    rateDesc: "",
+    uoM: "",
+    quantity: "1",
+    unitPrice: "",
+    discount: "0",
+    retailPrice: "",
+    overrides: {},
+  };
+}
+
+const num = (value: string): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+/**
+ * Matches a scenario's sale type against the live reference list, case-insensitively.
+ *
+ * FBR's own documents disagree on casing: the scenario table says "Goods at Standard Rate
+ * (default)" while the payload sample sends "Goods at standard rate (default)". The reference
+ * endpoint is the source of truth for what goes on the wire, so we look the name up there.
+ */
+function matchTransactionType(types: TransactionType[], saleType: string): TransactionType | undefined {
+  const needle = saleType.trim().toLowerCase();
+  return types.find((t) => t.transactioN_DESC.trim().toLowerCase() === needle);
+}
+
+export function NewInvoice({
+  account,
+  env,
+  onSubmitted,
+  initialScenarioId,
+}: {
+  account: UiAccount | null;
+  env: Env;
+  onSubmitted: () => void;
+  initialScenarioId?: string;
+}) {
+  const [reference, setReference] = useState<Reference | null>(null);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
+
+  const [invoiceDate, setInvoiceDate] = useState(currentSession().today);
+  const [internalInvoiceNumber, setInternalInvoiceNumber] = useState("");
+  const [scenarioId, setScenarioId] = useState(initialScenarioId ?? "");
+
+  const [buyer, setBuyer] = useState({
+    ntncnic: "",
+    businessName: "",
+    province: "",
+    address: "",
+    registrationType: "Unregistered" as BuyerRegistrationType,
+  });
+  const [buyerLookup, setBuyerLookup] = useState<string | null>(null);
+
+  const [items, setItems] = useState<ItemDraft[]>([blankItem()]);
+  const [ratesByType, setRatesByType] = useState<Record<number, SaleTypeRate[]>>({});
+  const [uomByHs, setUomByHs] = useState<Record<string, UnitOfMeasure[]>>({});
+
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<SubmitResult | null>(null);
+
+  // --- Reference data ------------------------------------------------------
+
+  useEffect(() => {
+    if (!account) return;
+    setReference(null);
+    setReferenceError(null);
+
+    api
+      .get<Reference>(`/api/reference?accountId=${account.id}&env=${env}`)
+      .then(setReference)
+      .catch((e: unknown) => setReferenceError(e instanceof Error ? e.message : String(e)));
+  }, [account, env]);
+
+  const loadRates = useCallback(
+    async (transTypeId: number) => {
+      if (!account || ratesByType[transTypeId]) return;
+      try {
+        const { rates } = await api.get<{ rates: SaleTypeRate[] }>(
+          `/api/rates?accountId=${account.id}&env=${env}&transTypeId=${transTypeId}&date=${invoiceDate}`,
+        );
+        setRatesByType((current) => ({ ...current, [transTypeId]: rates }));
+      } catch {
+        // Leaving the rate list empty is honest: the user can still type the rate FBR expects.
+      }
+    },
+    [account, env, invoiceDate, ratesByType],
+  );
+
+  const loadUom = useCallback(
+    async (hsCode: string) => {
+      if (!account || !hsCode || uomByHs[hsCode]) return;
+      try {
+        const { unitsOfMeasure } = await api.get<{ unitsOfMeasure: UnitOfMeasure[] }>(
+          `/api/uom-for-hs?accountId=${account.id}&env=${env}&hsCode=${encodeURIComponent(hsCode)}`,
+        );
+        setUomByHs((current) => ({ ...current, [hsCode]: unitsOfMeasure }));
+      } catch {
+        // Falls back to the full UoM list below.
+      }
+    },
+    [account, env, uomByHs],
+  );
+
+  // --- Scenario prefill ----------------------------------------------------
+
+  const applyScenario = useCallback(
+    (id: string) => {
+      setScenarioId(id);
+      const scenario = findScenario(id);
+      if (!scenario || !reference) return;
+
+      // The scenario fixes the sale type, and for retail/unregistered scenarios the buyer's
+      // registration type too — getting that wrong earns error 0012 or 0053.
+      setBuyer((b) => ({ ...b, registrationType: expectedBuyerRegistrationType(id) }));
+
+      const type = matchTransactionType(reference.transactionTypes, scenario.saleType);
+      if (!type) return;
+
+      void loadRates(type.transactioN_TYPE_ID);
+      setItems((current) =>
+        current.map((item) => ({ ...item, transTypeId: type.transactioN_TYPE_ID, rateDesc: "" })),
+      );
+    },
+    [reference, loadRates],
+  );
+
+  useEffect(() => {
+    if (initialScenarioId && reference) applyScenario(initialScenarioId);
+    // Only on first load of reference data for a given incoming scenario.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialScenarioId, reference]);
+
+  // --- Computation ---------------------------------------------------------
+
+  const computed = useMemo(
+    () =>
+      items.map((item) => {
+        const type = reference?.transactionTypes.find((t) => t.transactioN_TYPE_ID === item.transTypeId);
+        const rates = item.transTypeId !== null ? (ratesByType[item.transTypeId] ?? []) : [];
+        const rate: SaleTypeRate =
+          rates.find((r) => r.ratE_DESC === item.rateDesc) ??
+          // An unknown rate string is still sent verbatim; we just can't compute from it.
+          ({ ratE_ID: -1, ratE_DESC: item.rateDesc, ratE_VALUE: 0 } satisfies SaleTypeRate);
+
+        const base = computeLine({
+          quantity: num(item.quantity),
+          unitPrice: num(item.unitPrice),
+          discount: num(item.discount),
+          rate,
+          saleType: type?.transactioN_DESC ?? "",
+          retailPrice: num(item.retailPrice),
+        });
+
+        const applied = { ...base };
+        for (const field of OVERRIDABLE) {
+          const override = item.overrides[field];
+          if (override !== undefined && override !== "") applied[field] = round2(num(override));
+        }
+
+        return { base, applied, saleTypeDesc: type?.transactioN_DESC ?? "", rates };
+      }),
+    [items, reference, ratesByType],
+  );
+
+  const totals = useMemo(() => {
+    const value = computed.reduce((sum, c) => sum + c.applied.valueSalesExcludingST, 0);
+    const tax = computed.reduce(
+      (sum, c) => sum + c.applied.salesTaxApplicable + c.applied.furtherTax + c.applied.extraTax,
+      0,
+    );
+    return { value: round2(value), tax: round2(tax), total: round2(value + tax) };
+  }, [computed]);
+
+  const warnings = computed.flatMap((c, index) =>
+    c.base.warnings.map((text) => ({ index: index + 1, text })),
+  );
+
+  // --- Submission ----------------------------------------------------------
+
+  function updateItem(key: string, patch: Partial<ItemDraft>) {
+    setItems((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)));
+  }
+
+  async function submit() {
+    if (!account) return;
+    setSubmitting(true);
+    setResult(null);
+
+    const payloadItems: FbrInvoiceItem[] = items.map((item, index) => {
+      const { applied, saleTypeDesc } = computed[index]!;
+      return {
+        hsCode: item.hsCode,
+        productDescription: item.productDescription,
+        rate: applied.rate,
+        uoM: item.uoM,
+        quantity: num(item.quantity),
+        totalValues: applied.totalValues,
+        valueSalesExcludingST: applied.valueSalesExcludingST,
+        fixedNotifiedValueOrRetailPrice: applied.fixedNotifiedValueOrRetailPrice,
+        salesTaxApplicable: applied.salesTaxApplicable,
+        salesTaxWithheldAtSource: applied.salesTaxWithheldAtSource,
+        extraTax: applied.extraTax,
+        furtherTax: applied.furtherTax,
+        sroScheduleNo: "",
+        fedPayable: applied.fedPayable,
+        discount: applied.discount,
+        saleType: saleTypeDesc,
+        sroItemSerialNo: "",
+      };
+    });
+
+    try {
+      const response = await api.post<SubmitResult>("/api/invoice/submit", {
+        accountId: account.id,
+        env,
+        buyer,
+        invoiceDate,
+        internalInvoiceNumber,
+        ...(env === "sandbox" && scenarioId ? { scenarioId } : {}),
+        items: payloadItems,
+      });
+      setResult(response);
+      onSubmitted();
+    } catch (e) {
+      setResult({ status: "error", message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function lookupBuyer() {
+    if (!account) return;
+    setBuyerLookup("Checking…");
+    try {
+      const { registrationType } = await api.post<{ registrationType: BuyerRegistrationType }>(
+        "/api/buyer-lookup",
+        { accountId: account.id, env, registrationNo: buyer.ntncnic },
+      );
+      setBuyer((b) => ({ ...b, registrationType }));
+      setBuyerLookup(`FBR says: ${registrationType}`);
+    } catch (e) {
+      setBuyerLookup(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // --- Render --------------------------------------------------------------
+
+  if (!account) {
+    return (
+      <div className="note warn">
+        <strong>No account selected</strong>
+        <span>Add a seller account in Settings first.</span>
+      </div>
+    );
+  }
+
+  const fieldErrors = new Set(
+    result?.status === "rejected" ? result.errors.map((e) => e.field).filter(Boolean) : [],
+  );
+
+  return (
+    <>
+      {referenceError && (
+        <div className="note warn">
+          <strong>Couldn't load FBR's reference lists</strong>
+          <span>{referenceError}</span>
+          <span>You can still type values in by hand, but they have to match FBR's wording exactly.</span>
+        </div>
+      )}
+
+      {result && <ResultPanel result={result} />}
+
+      <div className="card">
+        <div className="card-head">
+          <h2>Invoice</h2>
+          <span className="hint">Seller: {account.sellerBusinessName || account.label}</span>
+        </div>
+
+        <div className="grid">
+          <Field label="Invoice date" hint="Pakistan date.">
+            <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+          </Field>
+
+          <Field label="Your invoice number" hint="Kept on this machine; FBR issues its own number.">
+            <input
+              value={internalInvoiceNumber}
+              onChange={(e) => setInternalInvoiceNumber(e.target.value)}
+              placeholder="ACME-2026-0001"
+            />
+          </Field>
+
+          {env === "sandbox" && (
+            <Field label="Scenario" hint="Required by FBR for every sandbox invoice.">
+              <select value={scenarioId} onChange={(e) => applyScenario(e.target.value)}>
+                <option value="">Choose a scenario…</option>
+                {(account.eligibleScenarios.length > 0
+                  ? SCENARIOS.filter((s) => account.eligibleScenarios.includes(s.id))
+                  : SCENARIOS
+                ).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.id} — {s.description}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h2>Buyer</h2>
+        </div>
+
+        <div className="grid">
+          <Field label="NTN / CNIC" hint="Leave blank if the buyer is unregistered.">
+            <div style={{ display: "flex", gap: "0.4rem" }}>
+              <input
+                className={fieldErrors.has("buyerNTNCNIC") ? "invalid" : undefined}
+                value={buyer.ntncnic}
+                inputMode="numeric"
+                onChange={(e) => setBuyer({ ...buyer, ntncnic: e.target.value })}
+              />
+              <button className="small" onClick={() => void lookupBuyer()} disabled={!buyer.ntncnic.trim()}>
+                Check
+              </button>
+            </div>
+          </Field>
+
+          <Field label="Registration type" {...(buyerLookup ? { hint: buyerLookup } : {})}>
+            <select
+              className={fieldErrors.has("buyerRegistrationType") ? "invalid" : undefined}
+              value={buyer.registrationType}
+              onChange={(e) =>
+                setBuyer({ ...buyer, registrationType: e.target.value as BuyerRegistrationType })
+              }
+            >
+              <option value="Registered">Registered</option>
+              <option value="Unregistered">Unregistered</option>
+            </select>
+          </Field>
+
+          <Field label="Business name">
+            <input
+              className={fieldErrors.has("buyerBusinessName") ? "invalid" : undefined}
+              value={buyer.businessName}
+              onChange={(e) => setBuyer({ ...buyer, businessName: e.target.value })}
+            />
+          </Field>
+
+          <Field label="Province">
+            <input
+              className={fieldErrors.has("buyerProvince") ? "invalid" : undefined}
+              list="provinces"
+              value={buyer.province}
+              onChange={(e) => setBuyer({ ...buyer, province: e.target.value })}
+            />
+            <datalist id="provinces">
+              {reference?.provinces.map((p) => (
+                <option key={p.stateProvinceCode} value={p.stateProvinceDesc} />
+              ))}
+            </datalist>
+          </Field>
+
+          <Field label="Address">
+            <input value={buyer.address} onChange={(e) => setBuyer({ ...buyer, address: e.target.value })} />
+          </Field>
+        </div>
+      </div>
+
+      {items.map((item, index) => (
+        <ItemCard
+          key={item.key}
+          index={index}
+          item={item}
+          computed={computed[index]!}
+          reference={reference}
+          uomOptions={uomByHs[item.hsCode] ?? reference?.unitsOfMeasure ?? []}
+          removable={items.length > 1}
+          fieldErrors={fieldErrors}
+          onChange={(patch) => updateItem(item.key, patch)}
+          onRemove={() => setItems((current) => current.filter((i) => i.key !== item.key))}
+          onSaleTypeChosen={(id) => void loadRates(id)}
+          onHsCodeChosen={(code) => void loadUom(code)}
+        />
+      ))}
+
+      <div className="card">
+        <div className="actions">
+          <button onClick={() => setItems((current) => [...current, blankItem()])}>Add another item</button>
+          <div className="spacer" />
+          <div className="totals">
+            <div>
+              <span>Value excl. tax</span>
+              <span>{totals.value.toFixed(2)}</span>
+            </div>
+            <div>
+              <span>Tax</span>
+              <span>{totals.tax.toFixed(2)}</span>
+            </div>
+            <div>
+              <span>Total</span>
+              <span>{totals.total.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+
+        {warnings.length > 0 && (
+          <div className="note warn">
+            <strong>Check these before submitting</strong>
+            <ul>
+              {warnings.map((w, i) => (
+                <li key={i}>
+                  Item {w.index}: {w.text}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="actions">
+          <button className="primary" onClick={() => void submit()} disabled={submitting}>
+            {submitting
+              ? "Checking with FBR…"
+              : env === "production"
+                ? "File this invoice with FBR"
+                : "Submit to sandbox"}
+          </button>
+          <span className="hint">
+            FBR pre-checks the invoice before it's filed, so a mistake is caught without creating a record.
+          </span>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ItemCard({
+  index,
+  item,
+  computed,
+  reference,
+  uomOptions,
+  removable,
+  fieldErrors,
+  onChange,
+  onRemove,
+  onSaleTypeChosen,
+  onHsCodeChosen,
+}: {
+  index: number;
+  item: ItemDraft;
+  computed: { base: ReturnType<typeof computeLine>; applied: ReturnType<typeof computeLine>; rates: SaleTypeRate[] };
+  reference: Reference | null;
+  uomOptions: UnitOfMeasure[];
+  removable: boolean;
+  fieldErrors: Set<string | null>;
+  onChange: (patch: Partial<ItemDraft>) => void;
+  onRemove: () => void;
+  onSaleTypeChosen: (transTypeId: number) => void;
+  onHsCodeChosen: (hsCode: string) => void;
+}) {
+  const isThirdSchedule = /3rd\s*schedule/i.test(
+    reference?.transactionTypes.find((t) => t.transactioN_TYPE_ID === item.transTypeId)?.transactioN_DESC ?? "",
+  );
+
+  const override = (field: Overridable, value: string) =>
+    onChange({ overrides: { ...item.overrides, [field]: value } });
+
+  return (
+    <div className="item">
+      <div className="item-head">
+        <span>Item {index + 1}</span>
+        {computed.base.confidence === "low" && <span className="pill unsure">check the amounts</span>}
+        <div className="spacer" />
+        {removable && (
+          <button className="small danger" onClick={onRemove}>
+            Remove
+          </button>
+        )}
+      </div>
+
+      <div className="grid">
+        <Field label="HS code">
+          <input
+            className={fieldErrors.has("hsCode") ? "invalid" : undefined}
+            list={`hs-${item.key}`}
+            value={item.hsCode}
+            onChange={(e) => {
+              onChange({ hsCode: e.target.value });
+              onHsCodeChosen(e.target.value);
+            }}
+            placeholder="0101.2100"
+          />
+          <datalist id={`hs-${item.key}`}>
+            {reference?.hsCodes.map((h) => (
+              <option key={h.hS_CODE} value={h.hS_CODE}>
+                {h.description}
+              </option>
+            ))}
+          </datalist>
+        </Field>
+
+        <Field label="Description">
+          <input
+            value={item.productDescription}
+            onChange={(e) => onChange({ productDescription: e.target.value })}
+          />
+        </Field>
+
+        <Field label="Sale type">
+          <select
+            className={fieldErrors.has("saleType") ? "invalid" : undefined}
+            value={item.transTypeId ?? ""}
+            onChange={(e) => {
+              const id = Number(e.target.value);
+              onChange({ transTypeId: Number.isFinite(id) ? id : null, rateDesc: "" });
+              if (Number.isFinite(id)) onSaleTypeChosen(id);
+            }}
+          >
+            <option value="">Choose…</option>
+            {reference?.transactionTypes.map((t) => (
+              <option key={t.transactioN_TYPE_ID} value={t.transactioN_TYPE_ID}>
+                {t.transactioN_DESC}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Rate" hint={computed.rates.length === 0 ? "Pick a sale type to load rates." : undefined}>
+          <select
+            className={fieldErrors.has("rate") ? "invalid" : undefined}
+            value={item.rateDesc}
+            onChange={(e) => onChange({ rateDesc: e.target.value })}
+          >
+            <option value="">Choose…</option>
+            {computed.rates.map((r) => (
+              <option key={r.ratE_ID} value={r.ratE_DESC}>
+                {r.ratE_DESC}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field
+          label="Unit of measure"
+          hint={uomOptions.length > 0 ? "FBR restricts this per HS code." : undefined}
+        >
+          <input
+            className={fieldErrors.has("uoM") ? "invalid" : undefined}
+            list={`uom-${item.key}`}
+            value={item.uoM}
+            onChange={(e) => onChange({ uoM: e.target.value })}
+          />
+          <datalist id={`uom-${item.key}`}>
+            {uomOptions.map((u) => (
+              <option key={u.uoM_ID} value={u.description} />
+            ))}
+          </datalist>
+        </Field>
+
+        <Field label="Quantity">
+          <input
+            className={fieldErrors.has("quantity") ? "invalid" : undefined}
+            inputMode="decimal"
+            value={item.quantity}
+            onChange={(e) => onChange({ quantity: e.target.value })}
+          />
+        </Field>
+
+        <Field label="Unit price (excl. tax)">
+          <input inputMode="decimal" value={item.unitPrice} onChange={(e) => onChange({ unitPrice: e.target.value })} />
+        </Field>
+
+        <Field label="Discount">
+          <input inputMode="decimal" value={item.discount} onChange={(e) => onChange({ discount: e.target.value })} />
+        </Field>
+
+        {isThirdSchedule && (
+          <Field label="Retail price per unit" hint="3rd Schedule goods are taxed on retail price.">
+            <input
+              className={fieldErrors.has("fixedNotifiedValueOrRetailPrice") ? "invalid" : undefined}
+              inputMode="decimal"
+              value={item.retailPrice}
+              onChange={(e) => onChange({ retailPrice: e.target.value })}
+            />
+          </Field>
+        )}
+      </div>
+
+      <div className="grid">
+        <Amount
+          label="Value excl. sales tax"
+          field="valueSalesExcludingST"
+          item={item}
+          computed={computed}
+          onOverride={override}
+          invalid={fieldErrors.has("valueSalesExcludingST")}
+        />
+        <Amount
+          label="Sales tax"
+          field="salesTaxApplicable"
+          item={item}
+          computed={computed}
+          onOverride={override}
+          invalid={fieldErrors.has("salesTaxApplicable")}
+        />
+        <Amount
+          label="Further tax"
+          field="furtherTax"
+          item={item}
+          computed={computed}
+          onOverride={override}
+          invalid={fieldErrors.has("furtherTax")}
+        />
+        <Amount
+          label="Extra tax"
+          field="extraTax"
+          item={item}
+          computed={computed}
+          onOverride={override}
+          invalid={fieldErrors.has("extraTax")}
+        />
+        <Amount
+          label="Sales tax withheld"
+          field="salesTaxWithheldAtSource"
+          item={item}
+          computed={computed}
+          onOverride={override}
+          invalid={fieldErrors.has("salesTaxWithheldAtSource")}
+        />
+        <Amount
+          label="FED payable"
+          field="fedPayable"
+          item={item}
+          computed={computed}
+          onOverride={override}
+          invalid={fieldErrors.has("fedPayable")}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A computed amount the user can take over.
+ *
+ * Overridden fields are visibly marked and offer a way back to the calculated value, because the
+ * calculation is right for ordinary sales and wrong for several specific ones — the user needs to
+ * see at a glance which numbers are theirs.
+ */
+function Amount({
+  label,
+  field,
+  item,
+  computed,
+  onOverride,
+  invalid,
+}: {
+  label: string;
+  field: Overridable;
+  item: ItemDraft;
+  computed: { applied: ReturnType<typeof computeLine> };
+  onOverride: (field: Overridable, value: string) => void;
+  invalid: boolean;
+}) {
+  const overridden = item.overrides[field] !== undefined && item.overrides[field] !== "";
+
+  return (
+    <div className="field">
+      <label>
+        {label}
+        {overridden && " · edited"}
+      </label>
+      <input
+        className={[invalid ? "invalid" : "", overridden ? "overridden" : ""].filter(Boolean).join(" ")}
+        inputMode="decimal"
+        value={overridden ? item.overrides[field]! : computed.applied[field].toFixed(2)}
+        onChange={(e) => onOverride(field, e.target.value)}
+      />
+      {overridden && (
+        <button className="link" style={{ alignSelf: "flex-start" }} onClick={() => onOverride(field, "")}>
+          use calculated value
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ResultPanel({ result }: { result: SubmitResult }) {
+  if (result.status === "success") {
+    return (
+      <div className="note ok">
+        <strong>Filed with FBR</strong>
+        <span className="irn">{result.irn}</span>
+        <span>This is FBR's invoice number. It must appear on the printed invoice.</span>
+        {result.dated && <span className="hint">FBR recorded it at {result.dated}.</span>}
+      </div>
+    );
+  }
+
+  if (result.status === "rejected") {
+    return (
+      <div className="note error">
+        <strong>
+          {result.stage === "precheck"
+            ? "FBR's pre-check rejected this invoice — nothing was filed"
+            : "FBR rejected this invoice — nothing was filed"}
+        </strong>
+        <ul>
+          {result.errors.map((error, i) => (
+            <li key={i}>
+              {error.itemSNo && <>Item {error.itemSNo}: </>}
+              {error.plain}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  if (result.status === "uncertain") {
+    return (
+      <div className="note warn">
+        <strong>Don't re-submit yet — we can't tell whether this was filed</strong>
+        <span>{result.reason}</span>
+        <span>
+          FBR gives no way to check this automatically. Search for it in the IRIS portal using the
+          details below, then record the outcome under "Needs checking".
+        </span>
+        <ul>
+          {Object.entries(result.portalSearch).map(([key, value]) => (
+            <li key={key}>
+              {key}: <span className="mono">{String(value)}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  return (
+    <div className="note error">
+      <strong>Couldn't submit</strong>
+      <span>{result.message}</span>
+    </div>
+  );
+}

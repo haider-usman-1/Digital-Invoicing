@@ -264,18 +264,31 @@ function truncate(text: string, max = 300): string {
 /**
  * Canned responses for offline development.
  *
- * Driven by the product description so a developer can exercise every branch without touching
- * FBR: include "REJECT" to get an item-level rejection (the outer-statusCode-"00" trap),
- * "HEADERFAIL" for a header-level rejection, or "TIMEOUT" for the ambiguous case that produces an
- * uncertain submission.
+ * Driven by the product description so a developer can exercise every branch without touching FBR:
+ *
+ *   - "REJECT"          item-level rejection, in FBR's real shape (outer statusCode "00")
+ *   - "HEADERFAIL"      header-level rejection
+ *   - "TIMEOUT"         pre-check passes, then the FILING goes ambiguous
+ *   - "PRECHECKTIMEOUT" the pre-check itself goes ambiguous
+ *
+ * The two timeout triggers are deliberately separate, because the stage changes the meaning
+ * entirely. An ambiguous pre-check files nothing and is safe to retry; an ambiguous filing is the
+ * dangerous case that leaves an invoice in an unknown state, and it is the one worth rehearsing.
  */
 function mockInvoiceCall(payload: FbrInvoicePayload, action: "post" | "validate"): InvoiceCall {
   const trigger = payload.items.map((i) => i.productDescription).join(" ").toUpperCase();
 
-  if (trigger.includes("TIMEOUT")) {
+  if (trigger.includes("PRECHECKTIMEOUT") && action === "validate") {
     return {
       transport: "ambiguous",
-      reason: "Mock mode: simulated timeout. The invoice may or may not have been filed.",
+      reason: "Mock mode: simulated timeout during the pre-check. Nothing was filed.",
+    };
+  }
+
+  if (trigger.includes("TIMEOUT") && action === "post") {
+    return {
+      transport: "ambiguous",
+      reason: "Mock mode: simulated timeout while filing. The invoice may or may not have been filed.",
     };
   }
 
