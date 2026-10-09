@@ -43,6 +43,7 @@ src/core/      Pure, no I/O — the FBR rules that are expensive to get wrong
   calc.ts        computes line amounts, and declares when it can't
   errors.ts      FBR error codes → plain language + the field to highlight
   scenarios.ts   the 28 sandbox scenarios
+  scenario-templates.ts  ready-to-post defaults per scenario (unverified; see below)
   endpoints.ts   endpoint URLs, written out literally
 src/server/    Owns every FBR call; a token never reaches the browser
 src/ui/        React, three screens, one hand-written stylesheet
@@ -66,6 +67,14 @@ rupees 60 per kilogram"` expose only the `18` in `ratE_VALUE`; the rest exists s
 Schedule goods are taxed on retail price, not sale value. `calc.ts` returns a low-confidence result
 with an explicit warning in those cases instead of a confident wrong number, and the UI lets the
 user take over.
+
+**The scenario templates have never been tested against FBR.** Every eligible scenario opens a
+fully prefilled, submittable invoice, which is the only way the scenario screen earns its keep — but
+the HS code, unit of measure and rate in each template are educated guesses, and FBR validates those
+combinations server-side. That is acceptable only because corrections are savable: fix a scenario
+once, press **Save these values as the template**, and every account after it starts from the
+corrected version. Do not quietly "tidy" a template to look more confident than it is; fix it by
+posting it.
 
 Undocumented assumptions are listed in [`docs/ROADMAP.md`](docs/ROADMAP.md) with the code that
 depends on them. Resolve them by probing sandbox, not by guessing.

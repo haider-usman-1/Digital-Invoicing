@@ -24,6 +24,29 @@ const ACCOUNT = {
   hasProductionToken: false,
 };
 
+function template(scenarioId: string, registrationType: "Registered" | "Unregistered") {
+  return {
+    scenarioId,
+    customised: false,
+    verify: "Replace the buyer NTN with a genuinely registered one.",
+    buyer: {
+      ntncnic: "0788762",
+      businessName: "Registered Buyer",
+      province: "Punjab",
+      address: "Lahore",
+      registrationType,
+    },
+    item: {
+      hsCode: "1006.3010",
+      productDescription: "Basmati rice, semi-milled or wholly milled",
+      uoM: "KG",
+      quantity: 100,
+      valueSalesExcludingST: 25000,
+      rateDesc: "18%",
+    },
+  };
+}
+
 const REFERENCE = {
   provinces: [{ stateProvinceCode: 8, stateProvinceDesc: "SINDH" }],
   hsCodes: [{ hS_CODE: "0101.2100", description: "Pure-bred breeding horses" }],
@@ -43,6 +66,8 @@ function stubApi(overrides: Record<string, unknown> = {}) {
     "/api/accounts": { accounts: [ACCOUNT] },
     "/api/submissions": { submissions: [], needsAttention: [] },
     "/api/reference": REFERENCE,
+    "/api/rates": { rates: [{ ratE_ID: 413, ratE_DESC: "18%", ratE_VALUE: 18 }] },
+    "/api/uom-for-hs": { unitsOfMeasure: [{ uoM_ID: 2, description: "KG" }] },
     "/api/scenarios": {
       eligible: [
         {
@@ -51,6 +76,7 @@ function stubApi(overrides: Record<string, unknown> = {}) {
           saleType: "Goods at Standard Rate (default)",
           expectedBuyerRegistrationType: "Registered",
           completed: true,
+          template: template("SN001", "Registered"),
         },
         {
           id: "SN002",
@@ -58,6 +84,7 @@ function stubApi(overrides: Record<string, unknown> = {}) {
           saleType: "Goods at Standard Rate (default)",
           expectedBuyerRegistrationType: "Unregistered",
           completed: false,
+          template: template("SN002", "Unregistered"),
         },
       ],
       completedCount: 1,
@@ -209,6 +236,65 @@ describe("value and unit price are interchangeable", () => {
 
     expect(amountFields().value.className).not.toContain("overridden");
     expect(screen.queryByText(/Value excl\. sales tax · edited/)).toBeNull();
+  });
+});
+
+describe("starting a scenario", () => {
+  async function startScenario() {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Invoice")).toBeTruthy());
+    fireEvent.click(screen.getByText("Scenario testing"));
+    await waitFor(() => expect(screen.getByText(/1 of 2 passed/)).toBeTruthy());
+    fireEvent.click(screen.getAllByText("Start")[0]!);
+    // Wait on real prefilled content, not the banner: the banner renders from the prop straight
+    // away, while the prefill itself waits for FBR's reference lists to arrive.
+    await waitFor(() =>
+      expect((screen.getByLabelText(/^HS code$/) as HTMLInputElement).value).toBe("1006.3010"),
+    );
+  }
+
+  test("lands on a form that is already filled in, not an empty one", async () => {
+    // The entire point of the scenario screen. Prefilling only the sale type saved nothing.
+    await startScenario();
+
+    expect((screen.getByLabelText(/^HS code$/) as HTMLInputElement).value).toBe("1006.3010");
+    expect((screen.getByLabelText(/^Unit of measure$/) as HTMLInputElement).value).toBe("KG");
+    expect((screen.getByLabelText(/^Quantity$/) as HTMLInputElement).value).toBe("100");
+    expect((screen.getByLabelText(/^Value excl\. sales tax$/) as HTMLInputElement).value).toBe("25000");
+    expect((screen.getByLabelText(/^Description$/) as HTMLInputElement).value).toMatch(/Basmati/);
+  });
+
+  test("fills in the buyer too", async () => {
+    await startScenario();
+
+    expect((screen.getByLabelText(/^Business name$/) as HTMLInputElement).value).toBe("Registered Buyer");
+    expect((screen.getByLabelText(/NTN \/ CNIC/) as HTMLInputElement).value).toBe("0788762");
+  });
+
+  test("computes the tax from the prefilled values, so the form is submittable as-is", async () => {
+    await startScenario();
+    await waitFor(() =>
+      expect((screen.getByLabelText(/^Sales tax$/) as HTMLInputElement).value).toBe("4500.00"),
+    );
+  });
+
+  test("says the defaults are unverified and what to check", async () => {
+    // These were never tested against FBR, and pretending otherwise would be dishonest.
+    await startScenario();
+    expect(screen.getByText(/never been checked against FBR/i)).toBeTruthy();
+    expect(screen.getByText(/Replace the buyer NTN/i)).toBeTruthy();
+  });
+
+  test("offers to save corrections back to the template", async () => {
+    await startScenario();
+    expect(screen.getByText(/Save these values as the SN002 template/)).toBeTruthy();
+  });
+
+  test("shows no template banner on a plain invoice", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Invoice")).toBeTruthy());
+    expect(screen.queryByText(/Prefilled from the/)).toBeNull();
+    expect(screen.queryByText(/Save these values as/)).toBeNull();
   });
 });
 

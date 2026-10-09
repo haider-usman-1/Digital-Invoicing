@@ -336,3 +336,107 @@ describe("the served page", () => {
     expect((await fetch(`${BASE}/nope`)).status).toBe(404);
   });
 });
+
+describe("scenario templates", () => {
+  test("ships a prefilled template with every eligible scenario", async () => {
+    // Prefilling only the sale type saves nobody anything — the form has to arrive fileable.
+    const { eligible } = await json<{
+      eligible: Array<{ id: string; template: { buyer: Record<string, string>; item: Record<string, unknown> } }>;
+    }>(await authed(`/api/scenarios?accountId=${accountId}`));
+
+    const sn001 = eligible.find((s) => s.id === "SN001")!;
+    expect(sn001.template.item.hsCode).toBeTruthy();
+    expect(sn001.template.item.uoM).toBeTruthy();
+    expect(sn001.template.item.rateDesc).toBeTruthy();
+    expect(sn001.template.item.quantity).toBeGreaterThan(0);
+    expect(sn001.template.item.valueSalesExcludingST).toBeGreaterThan(0);
+    expect(sn001.template.buyer.businessName).toBeTruthy();
+  });
+
+  test("gives a registered buyer to scenarios that need one, and unregistered to the rest", async () => {
+    const { eligible } = await json<{
+      eligible: Array<{ id: string; template: { buyer: { registrationType: string } } }>;
+    }>(await authed(`/api/scenarios?accountId=${accountId}`));
+
+    expect(eligible.find((s) => s.id === "SN001")!.template.buyer.registrationType).toBe("Registered");
+    expect(eligible.find((s) => s.id === "SN002")!.template.buyer.registrationType).toBe("Unregistered");
+  });
+
+  test("marks built-in templates as not customised and warns what to verify", async () => {
+    const { eligible } = await json<{
+      eligible: Array<{ id: string; template: { customised: boolean; verify?: string } }>;
+    }>(await authed(`/api/scenarios?accountId=${accountId}`));
+
+    const sn001 = eligible.find((s) => s.id === "SN001")!;
+    expect(sn001.template.customised).toBe(false);
+    // The shipped buyer NTN is a documentation example, so this must say so.
+    expect(sn001.template.verify).toMatch(/NTN|HS code/i);
+  });
+
+  test("saves a corrected template and serves it back to every account", async () => {
+    await authed("/api/scenario-templates/SN001", {
+      method: "POST",
+      body: JSON.stringify({
+        buyer: {
+          ntncnic: "0788762",
+          businessName: "Verified Buyer Ltd",
+          province: "Punjab",
+          address: "Lahore",
+          registrationType: "Registered",
+        },
+        item: {
+          hsCode: "2523.2910",
+          productDescription: "Portland cement",
+          uoM: "KG",
+          rateDesc: "18%",
+          quantity: 5000,
+          valueSalesExcludingST: 200000,
+        },
+      }),
+    });
+
+    // Read it back through a different account: a correction is global, because FBR's requirements
+    // for a scenario don't vary by registration.
+    const { accounts } = await json<{ accounts: Array<{ id: string; label: string }> }>(
+      await authed("/api/accounts"),
+    );
+    const other = accounts.find((a) => a.id !== accountId) ?? accounts[0]!;
+    await authed("/api/accounts", {
+      method: "POST",
+      body: JSON.stringify({ id: other.id, label: other.label, sellerNTNCNIC: "7327556", eligibleScenarios: ["SN001"] }),
+    });
+
+    const { eligible } = await json<{
+      eligible: Array<{ id: string; template: { customised: boolean; item: { hsCode: string } } }>;
+    }>(await authed(`/api/scenarios?accountId=${other.id}`));
+
+    const sn001 = eligible.find((s) => s.id === "SN001")!;
+    expect(sn001.template.customised).toBe(true);
+    expect(sn001.template.item.hsCode).toBe("2523.2910");
+  });
+
+  test("resets a template back to its built-in values", async () => {
+    await authed("/api/scenario-templates/SN002", {
+      method: "POST",
+      body: JSON.stringify({
+        buyer: { ntncnic: "1", businessName: "x", province: "y", address: "z", registrationType: "Unregistered" },
+        item: { hsCode: "9999.9999", productDescription: "x", uoM: "KG", rateDesc: "18%", quantity: 1, valueSalesExcludingST: 1 },
+      }),
+    });
+
+    const reset = await json<{ template: { customised: boolean; item: { hsCode: string } } }>(
+      await authed("/api/scenario-templates/SN002", { method: "DELETE" }),
+    );
+
+    expect(reset.template.customised).toBe(false);
+    expect(reset.template.item.hsCode).not.toBe("9999.9999");
+  });
+
+  test("refuses a template missing its buyer or item", async () => {
+    const response = await authed("/api/scenario-templates/SN005", {
+      method: "POST",
+      body: JSON.stringify({ item: { hsCode: "1006.3010" } }),
+    });
+    expect(response.status).toBe(400);
+  });
+});

@@ -21,6 +21,13 @@ learn it.
 | Is province matching case-sensitive? | Send the exact string from the `provinces` endpoint | `src/core/payload.ts` | Unverified |
 | Which STATL `status code` means Active? | Unknown; both of the spec's samples say "In-Active" | not yet used | Unverified |
 | Max items per invoice, payload size, rate limits | No limit assumed; reference data cached aggressively | — | Undocumented |
+| Does any scenario template actually pass? | Each is a best guess; FBR validates HS code / sale type / UoM / rate agreement server-side (errors 0052, 0099, 0101) | `src/core/scenario-templates.ts` | **Unverified — none has ever been posted** |
+| Is the shipped buyer NTN a registered taxpayer? | No. It is a number from FBR's documentation examples, so registered-buyer scenarios will fail with 0012/0053 until replaced | `src/core/scenario-templates.ts` | Known wrong, flagged in the UI |
+
+Scenario templates are corrected in place: fix one on the first account, press **Save these values
+as the template**, and every account after it inherits the correction. That is the mechanism that
+makes shipping unverified guesses acceptable — and the fastest way to retire the two rows above is
+to walk one account through its scenarios and save each one back.
 
 ## Deferred features
 

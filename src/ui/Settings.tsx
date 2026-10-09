@@ -243,13 +243,31 @@ function AccountForm({
  * every field here — a trailing button (like "Check") or a `<datalist>` is never the thing being
  * labelled.
  */
+const LABELLABLE = new Set(["input", "select", "textarea"]);
+
 function withControlId(children: React.ReactNode, id: string): React.ReactNode {
-  let injected = false;
-  return Children.toArray(children).map((node) => {
-    if (injected || !isValidElement(node)) return node;
-    injected = true;
-    return cloneElement(node as React.ReactElement<{ id?: string }>, { id });
-  });
+  // Descends through layout wrappers rather than taking the first child blindly: some fields wrap
+  // their input in a div to sit a button beside it, and a <div> cannot be labelled. Buttons are
+  // skipped too — a trailing "Check" is not the thing the label names.
+  const done = { value: false };
+
+  function visit(node: React.ReactNode): React.ReactNode {
+    if (done.value || !isValidElement(node)) return node;
+
+    if (typeof node.type === "string" && LABELLABLE.has(node.type)) {
+      done.value = true;
+      return cloneElement(node as React.ReactElement<{ id?: string }>, { id });
+    }
+
+    const nested = (node.props as { children?: React.ReactNode }).children;
+    if (nested === undefined) return node;
+
+    return cloneElement(node as React.ReactElement<{ children?: React.ReactNode }>, {
+      children: Children.toArray(nested).map(visit),
+    });
+  }
+
+  return Children.toArray(children).map(visit);
 }
 
 export function Field({

@@ -50,6 +50,33 @@ interface ItemDraft {
   overrides: Partial<Record<Overridable, string>>;
 }
 
+/** A scenario template as the server resolves it: built-in default, or the user's saved version. */
+export interface ScenarioTemplateData {
+  scenarioId: string;
+  customised: boolean;
+  verify?: string;
+  buyer: {
+    ntncnic: string;
+    businessName: string;
+    province: string;
+    address: string;
+    registrationType: BuyerRegistrationType;
+  };
+  item: {
+    hsCode: string;
+    productDescription: string;
+    uoM: string;
+    quantity: number;
+    valueSalesExcludingST: number;
+    rateDesc: string;
+    retailPrice?: number;
+    furtherTax?: number;
+    extraTax?: number;
+    fedPayable?: number;
+    salesTaxWithheldAtSource?: number;
+  };
+}
+
 interface Reference {
   provinces: Province[];
   hsCodes: HsCode[];
@@ -103,11 +130,14 @@ export function NewInvoice({
   env,
   onSubmitted,
   initialScenarioId,
+  template,
 }: {
   account: UiAccount | null;
   env: Env;
   onSubmitted: () => void;
   initialScenarioId?: string;
+  /** Present when the form was opened from the scenario screen, to be filled in ready to file. */
+  template?: ScenarioTemplateData;
 }) {
   const [reference, setReference] = useState<Reference | null>(null);
   const [referenceError, setReferenceError] = useState<string | null>(null);
@@ -131,6 +161,7 @@ export function NewInvoice({
 
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<SubmitResult | null>(null);
+  const [templateSaved, setTemplateSaved] = useState<string | null>(null);
 
   // --- Reference data ------------------------------------------------------
 
@@ -198,9 +229,60 @@ export function NewInvoice({
     [reference, loadRates],
   );
 
+  /**
+   * Fills the whole form from a scenario template.
+   *
+   * Distinct from `applyScenario`, which the dropdown on this screen uses: that only tags the
+   * invoice with a scenario and must not overwrite what the user has typed. Arriving from the
+   * scenario screen is the opposite — the entire point is to land on a form that is ready to file.
+   */
+  const applyTemplate = useCallback(
+    (id: string, tpl: ScenarioTemplateData) => {
+      if (!reference) return;
+      setScenarioId(id);
+      setBuyer({ ...tpl.buyer });
+
+      const scenario = findScenario(id);
+      const type = scenario
+        ? matchTransactionType(reference.transactionTypes, scenario.saleType)
+        : undefined;
+      if (type) void loadRates(type.transactioN_TYPE_ID);
+      if (tpl.item.hsCode) void loadUom(tpl.item.hsCode);
+
+      const amount = (value: number | undefined) => (value ? String(value) : "");
+
+      setItems([
+        {
+          ...blankItem(),
+          transTypeId: type?.transactioN_TYPE_ID ?? null,
+          hsCode: tpl.item.hsCode,
+          productDescription: tpl.item.productDescription,
+          uoM: tpl.item.uoM,
+          rateDesc: tpl.item.rateDesc,
+          quantity: String(tpl.item.quantity),
+          value: String(tpl.item.valueSalesExcludingST),
+          amountBasis: "value",
+          retailPrice: amount(tpl.item.retailPrice),
+          // Taxes the template specifies are seeded as overrides, since they cannot be derived.
+          overrides: {
+            ...(tpl.item.furtherTax ? { furtherTax: String(tpl.item.furtherTax) } : {}),
+            ...(tpl.item.extraTax ? { extraTax: String(tpl.item.extraTax) } : {}),
+            ...(tpl.item.fedPayable ? { fedPayable: String(tpl.item.fedPayable) } : {}),
+            ...(tpl.item.salesTaxWithheldAtSource
+              ? { salesTaxWithheldAtSource: String(tpl.item.salesTaxWithheldAtSource) }
+              : {}),
+          },
+        },
+      ]);
+    },
+    [reference, loadRates, loadUom],
+  );
+
   useEffect(() => {
-    if (initialScenarioId && reference) applyScenario(initialScenarioId);
-    // Only on first load of reference data for a given incoming scenario.
+    if (!reference || !initialScenarioId) return;
+    if (template) applyTemplate(initialScenarioId, template);
+    else applyScenario(initialScenarioId);
+    // Runs once per incoming scenario, after reference data lands.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialScenarioId, reference]);
 
@@ -305,6 +387,58 @@ export function NewInvoice({
     }
   }
 
+  /**
+   * Writes the current form back over the scenario's template.
+   *
+   * This is what makes the shipped defaults safe to guess at: FBR validates HS code, unit of
+   * measure and rate combinations server-side and none of them could be verified without a
+   * sandbox token, so the first account through a scenario corrects it and every account after
+   * inherits the fix.
+   */
+  async function storeTemplate() {
+    if (!template || !scenarioId) return;
+    const item = items[0];
+    const applied = computed[0]?.applied;
+    if (!item || !applied) return;
+
+    try {
+      await api.post(`/api/scenario-templates/${scenarioId}`, {
+        buyer,
+        item: {
+          hsCode: item.hsCode,
+          productDescription: item.productDescription,
+          uoM: item.uoM,
+          rateDesc: item.rateDesc,
+          quantity: num(item.quantity),
+          valueSalesExcludingST: applied.valueSalesExcludingST,
+          ...(num(item.retailPrice) ? { retailPrice: num(item.retailPrice) } : {}),
+          ...(applied.furtherTax ? { furtherTax: applied.furtherTax } : {}),
+          ...(applied.extraTax ? { extraTax: applied.extraTax } : {}),
+          ...(applied.fedPayable ? { fedPayable: applied.fedPayable } : {}),
+          ...(applied.salesTaxWithheldAtSource
+            ? { salesTaxWithheldAtSource: applied.salesTaxWithheldAtSource }
+            : {}),
+        },
+      });
+      setTemplateSaved(`Saved. Every account will now start ${scenarioId} from these values.`);
+    } catch (e) {
+      setTemplateSaved(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function resetTemplateToDefault() {
+    if (!scenarioId) return;
+    try {
+      const { template: fresh } = await api.delete<{ template: ScenarioTemplateData }>(
+        `/api/scenario-templates/${scenarioId}`,
+      );
+      applyTemplate(scenarioId, fresh);
+      setTemplateSaved(`${scenarioId} is back to its built-in starting values.`);
+    } catch (e) {
+      setTemplateSaved(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   async function lookupBuyer() {
     if (!account) return;
     setBuyerLookup("Checking…");
@@ -344,6 +478,25 @@ export function NewInvoice({
           <span>You can still type values in by hand, but they have to match FBR's wording exactly.</span>
         </div>
       )}
+
+      {template && (
+        <div className="note warn">
+          <strong>
+            Prefilled from the {template.scenarioId} template
+            {template.customised ? " (your saved version)" : " (built-in starting values)"}
+          </strong>
+          {!template.customised && (
+            <span>
+              These defaults have never been checked against FBR. If it rejects something, fix it
+              here and save it back — every account after this one will start from the corrected
+              version.
+            </span>
+          )}
+          {template.verify && <span>{template.verify}</span>}
+        </div>
+      )}
+
+      {templateSaved && <div className="note ok">{templateSaved}</div>}
 
       {result && <ResultPanel result={result} />}
 
@@ -507,6 +660,19 @@ export function NewInvoice({
             FBR pre-checks the invoice before it's filed, so a mistake is caught without creating a record.
           </span>
         </div>
+
+        {template && (
+          <div className="actions">
+            <button onClick={() => void storeTemplate()}>
+              Save these values as the {template.scenarioId} template
+            </button>
+            {template.customised && (
+              <button className="link" onClick={() => void resetTemplateToDefault()}>
+                reset to built-in values
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </>
   );
@@ -765,12 +931,9 @@ function Amount({
 }) {
   const overridden = item.overrides[field] !== undefined && item.overrides[field] !== "";
 
+  // Goes through Field so the label is actually associated with the input, like every other field.
   return (
-    <div className="field">
-      <label>
-        {label}
-        {overridden && " · edited"}
-      </label>
+    <Field label={overridden ? `${label} · edited` : label}>
       <input
         className={[invalid ? "invalid" : "", overridden ? "overridden" : ""].filter(Boolean).join(" ")}
         inputMode="decimal"
@@ -782,7 +945,7 @@ function Amount({
           use calculated value
         </button>
       )}
-    </div>
+    </Field>
   );
 }
 

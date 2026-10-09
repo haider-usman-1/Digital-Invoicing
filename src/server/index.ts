@@ -34,6 +34,7 @@ import {
 } from "./security.ts";
 import { deleteAccount, findAccount, loadAccounts, redactAccount, tokenFor, upsertAccount } from "./store.ts";
 import { submitInvoice } from "./submit.ts";
+import { loadTemplate, resetTemplate, saveTemplate } from "./templates.ts";
 import { dataDir, ensureDataDir } from "./paths.ts";
 import { SCENARIOS, expectedBuyerRegistrationType } from "../core/scenarios.ts";
 import { pakistanDate } from "../core/payload.ts";
@@ -303,11 +304,35 @@ function start() {
                 saleType: scenario?.saleType ?? "",
                 expectedBuyerRegistrationType: expectedBuyerRegistrationType(id),
                 completed: done.has(id),
+                // The whole point of the scenario screen: a scenario arrives ready to file.
+                template: loadTemplate(id),
               };
             }),
             completedCount: eligible.filter((id) => done.has(id)).length,
           });
         }),
+      },
+
+      /*
+       * Scenario templates.
+       *
+       * Saving is what turns the unverified built-in defaults into the user's own verified data:
+       * a scenario corrected once on the first account is correct for every account after it.
+       */
+      "/api/scenario-templates/:id": {
+        POST: guard(async (request) => {
+          const body = (await request.json()) as {
+            buyer?: unknown;
+            item?: unknown;
+            verify?: string;
+          };
+          if (!body.buyer || !body.item) {
+            return Response.json({ error: "A template needs both buyer and item details." }, { status: 400 });
+          }
+          return Response.json({ template: saveTemplate(request.params!.id!, body as never) });
+        }),
+
+        DELETE: guard((request) => Response.json({ template: resetTemplate(request.params!.id!) })),
       },
 
       "/api/quit": {

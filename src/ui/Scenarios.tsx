@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api.ts";
 import { NewInvoice } from "./NewInvoice.tsx";
+import type { ScenarioTemplateData } from "./NewInvoice.tsx";
 import type { UiAccount } from "./App.tsx";
 import type { Env } from "../core/types.ts";
 
@@ -10,6 +11,8 @@ interface EligibleScenario {
   saleType: string;
   expectedBuyerRegistrationType: string;
   completed: boolean;
+  /** Prefilled values for this scenario, so "Start" lands on a form ready to file. */
+  template: ScenarioTemplateData;
 }
 
 /**
@@ -49,6 +52,7 @@ export function Scenarios({ account, env }: { account: UiAccount | null; env: En
   if (error) return <div className="note error">{error}</div>;
   if (!scenarios) return <div className="loading">Loading…</div>;
 
+  const activeTemplate = scenarios.find((s) => s.id === active)?.template;
   const done = scenarios.filter((s) => s.completed).length;
   const allDone = scenarios.length > 0 && done === scenarios.length;
 
@@ -92,8 +96,9 @@ export function Scenarios({ account, env }: { account: UiAccount | null; env: En
               </div>
             ) : (
               <p className="hint">
-                Each scenario needs one successfully filed sandbox invoice. The sale type is fixed by
-                FBR, so starting from a scenario fills it in for you.
+                Each scenario needs one successfully filed sandbox invoice. Starting one opens a
+                fully prefilled form — adjust anything FBR objects to, then save it back so the next
+                account starts from the corrected version.
               </p>
             )}
 
@@ -149,6 +154,7 @@ export function Scenarios({ account, env }: { account: UiAccount | null; env: En
             account={account}
             env={env}
             initialScenarioId={active}
+            {...(activeTemplate ? { template: activeTemplate } : {})}
             onSubmitted={refresh}
           />
         </>
