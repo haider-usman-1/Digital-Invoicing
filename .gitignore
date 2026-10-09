@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.log
+
+# Local app data — contains FBR API tokens. Never commit.
+accounts.json
+reference-cache.json
+submissions.ndjson
+.env
+.env.*
+!.env.example
+
+.DS_Store
