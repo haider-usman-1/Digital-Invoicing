@@ -151,14 +151,17 @@ await page.open(`http://127.0.0.1:${appPort}/`);
 
 await Bun.sleep(2500);
 
-// Both palettes need checking. Driving the app's own control rather than emulating the OS setting,
-// because the palette is resolved in script now and an explicit choice is what users actually make.
-if (process.argv.includes("--light")) {
-  await page.evaluate(
-    `document.querySelector('[aria-label="Light theme"]')?.click()`,
-  );
-  await Bun.sleep(400);
-}
+/*
+ * Set the palette explicitly every run, never just for --light.
+ *
+ * The preference lives in localStorage and the Chrome profile directory is reused, so a previous
+ * --light run would otherwise leak into the next one and both sets of screenshots would come out
+ * the same. Driving the app's own control rather than emulating the OS media feature, because the
+ * palette is resolved in script now and an explicit choice is what a user actually makes.
+ */
+const wanted = process.argv.includes("--light") ? "Light theme" : "Dark theme";
+await page.evaluate(`document.querySelector('[aria-label=${JSON.stringify(wanted)}]')?.click()`);
+await Bun.sleep(400);
 
 for (const shot of SHOTS) {
   if (shot.tab) {

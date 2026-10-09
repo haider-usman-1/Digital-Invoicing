@@ -4,8 +4,8 @@ import { NewInvoice } from "./NewInvoice.tsx";
 import { Settings } from "./Settings.tsx";
 import { Scenarios } from "./Scenarios.tsx";
 import { Attention } from "./Attention.tsx";
-import { loadPreference, savePreference } from "./theme.ts";
-import type { ThemePreference } from "./theme.ts";
+import { iconFor, loadPreference, onThemeChange, resolveTheme, savePreference } from "./theme.ts";
+import type { ResolvedTheme, ThemePreference } from "./theme.ts";
 import type { Env } from "../core/types.ts";
 
 /** An account as the browser sees it: seller details, but never the tokens themselves. */
@@ -31,6 +31,10 @@ export function App() {
   const [env, setEnv] = useState<Env>("sandbox");
   const [tab, setTab] = useState<Tab>("invoice");
   const [theme, setTheme] = useState<ThemePreference>(() => loadPreference());
+  // Tracked separately because "system" can change under us while the app is open.
+  const [resolved, setResolved] = useState<ResolvedTheme>(() => resolveTheme(loadPreference()));
+
+  useEffect(() => onThemeChange(setResolved), []);
   const [attentionCount, setAttentionCount] = useState(0);
 
   const refreshAccounts = useCallback(async () => {
@@ -80,7 +84,7 @@ export function App() {
     <div className="app">
       <div className="topbar">
         <span className="brand">
-          <BrandMark />
+          <img src={iconFor(resolved)} width={18} height={18} alt="" />
           FBR Invoicing
         </span>
 
@@ -208,29 +212,6 @@ function MoonIcon() {
         strokeWidth="1.4"
         strokeLinejoin="round"
       />
-    </svg>
-  );
-}
-
-/** The app mark, inline so the shell has no asset dependency to resolve at runtime. */
-function BrandMark() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 512 512" aria-hidden="true">
-      <defs>
-        <linearGradient id="brandAccent" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#38bdf8" />
-          <stop offset="100%" stopColor="#818cf8" />
-        </linearGradient>
-      </defs>
-      <rect width="512" height="512" rx="128" fill="#131821" />
-      <polygon
-        points="256,96 384,170 384,318 256,392 128,318 128,170"
-        fill="none"
-        stroke="url(#brandAccent)"
-        strokeWidth="38"
-        strokeLinejoin="round"
-      />
-      <circle cx="256" cy="244" r="44" fill="url(#brandAccent)" />
     </svg>
   );
 }
