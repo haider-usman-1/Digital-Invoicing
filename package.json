@@ -7,15 +7,20 @@
   "scripts": {
     "dev": "FBR_MOCK=1 FBR_DEV=1 bun --hot src/server/index.ts",
     "start": "bun src/server/index.ts",
-    "test": "bun test",
+    "test": "bun test tests/ && bun run test:ui",
     "typecheck": "tsc --noEmit",
-    "build:win": "bun build --compile --target=bun-windows-x64 --windows-hide-console src/server/index.ts --outfile dist/FBR-Invoicing.exe"
+    "build:win": "bun build --compile --target=bun-windows-x64 --windows-hide-console src/server/index.ts --outfile dist/FBR-Invoicing.exe",
+    "test:ui": "bun test --preload ./tests-ui/setup.ts tests-ui",
+    "test:unit": "bun test tests/"
   },
   "dependencies": {
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^20.14.6",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
     "@types/bun": "^1.4.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
