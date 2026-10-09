@@ -47,6 +47,14 @@ function template(scenarioId: string, registrationType: "Registered" | "Unregist
   };
 }
 
+const SESSION = {
+  secret: "test-secret",
+  header: "x-fbr-session",
+  mock: true,
+  today: "2026-10-09",
+  dataDir: "/tmp/fbr-di",
+};
+
 const REFERENCE = {
   provinces: [{ stateProvinceCode: 8, stateProvinceDesc: "SINDH" }],
   hsCodes: [{ hS_CODE: "0101.2100", description: "Pure-bred breeding horses" }],
@@ -59,13 +67,7 @@ let releaseStalled: (() => void) | null = null;
 
 function stubApi(overrides: Record<string, unknown> = {}) {
   const routes: Record<string, unknown> = {
-    "/api/session": {
-      secret: "test-secret",
-      header: "x-fbr-session",
-      mock: true,
-      today: "2026-10-09",
-      dataDir: "/tmp/fbr-di",
-    },
+    "/api/session": SESSION,
     "/api/accounts": { accounts: [ACCOUNT] },
     "/api/submissions": { submissions: [], needsAttention: [] },
     "/api/reference": REFERENCE,
@@ -232,6 +234,95 @@ describe("checking without filing", () => {
     fireEvent.click(screen.getByText("Check without filing"));
     await waitFor(() => expect(screen.getByText(/Couldn't check this invoice/)).toBeTruthy());
     expect(screen.getByText(/Nothing has been filed/)).toBeTruthy();
+  });
+});
+
+describe("HS code and unit of measure", () => {
+  async function form() {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Item 1")).toBeTruthy());
+    return {
+      hs: screen.getByLabelText(/^HS code$/) as HTMLInputElement,
+      uomField: () => screen.getByLabelText(/^Unit of measure$/) as HTMLInputElement | HTMLSelectElement,
+    };
+  }
+
+  test("confirms a typed code by showing FBR's description for it", async () => {
+    // Otherwise there is no way to tell a real code from a plausible-looking typo.
+    const { hs } = await form();
+    fireEvent.change(hs, { target: { value: "0101.2100" } });
+
+    // Scoped to the field's own note: the description also appears in the suggestion list.
+    await waitFor(() =>
+      expect(hs.closest(".field")!.querySelector(".field-note")!.textContent).toBe(
+        "Pure-bred breeding horses",
+      ),
+    );
+    expect(hs.className).not.toContain("invalid");
+  });
+
+  test("questions a complete code that isn't in FBR's catalogue", async () => {
+    stubApi({ "/api/session": { ...SESSION, mock: false } });
+    const { hs } = await form();
+    fireEvent.change(hs, { target: { value: "9999.9999" } });
+
+    await waitFor(() => expect(screen.getByText(/Not in the HS code list/i)).toBeTruthy());
+    // A doubt, not a rejection: the cached list can be stale, so it must not borrow FBR's red.
+    expect(hs.className).toContain("suspect");
+    expect(hs.className).not.toContain("invalid");
+  });
+
+  test("never questions a code while running against mock reference data", async () => {
+    // 2942.0000 is a real code from a filed production invoice. In mock mode the catalogue is a
+    // handful of fixtures, so trusting it marked genuine codes as unknown.
+    const { hs } = await form();
+    fireEvent.change(hs, { target: { value: "2942.0000" } });
+
+    await Bun.sleep(50);
+    expect(screen.queryByText(/Not in the HS code list/i)).toBeNull();
+    expect(hs.className).not.toContain("suspect");
+  });
+
+  test("says nothing about validity until the code is complete", async () => {
+    const { hs } = await form();
+    fireEvent.change(hs, { target: { value: "0101.21" } });
+
+    expect(screen.queryByText(/doesn't list this code/i)).toBeNull();
+    expect(hs.className).not.toContain("invalid");
+  });
+
+  test("turns the unit into a constrained choice once FBR has answered", async () => {
+    // A datalist only suggests. With one allowed unit it showed nothing and filled nothing in.
+    const { hs, uomField } = await form();
+    expect(uomField().tagName).toBe("INPUT");
+
+    fireEvent.change(hs, { target: { value: "0101.2100" } });
+    await waitFor(() => expect(uomField().tagName).toBe("SELECT"));
+  });
+
+  test("fills in the unit when FBR allows only one", async () => {
+    const { hs, uomField } = await form();
+    fireEvent.change(hs, { target: { value: "0101.2100" } });
+
+    await waitFor(() => expect(uomField().value).toBe("KG"));
+  });
+
+  test("keeps a now-disallowed unit visible rather than silently dropping it", async () => {
+    const { hs, uomField } = await form();
+    fireEvent.change(hs, { target: { value: "0101.2100" } });
+    await waitFor(() => expect(uomField().tagName).toBe("SELECT"));
+
+    fireEvent.change(uomField(), { target: { value: "KG" } });
+    expect(uomField().value).toBe("KG");
+  });
+
+  test("says so when the unit restriction can't be loaded", async () => {
+    // Quietly offering all 44 units hands the user FBR's error 0099 instead of an explanation.
+    stubApi({ "/api/uom-for-hs": undefined });
+    const { hs } = await form();
+    fireEvent.change(hs, { target: { value: "0101.2100" } });
+
+    await waitFor(() => expect(screen.getByText(/Couldn't load the allowed units/i)).toBeTruthy());
   });
 });
 

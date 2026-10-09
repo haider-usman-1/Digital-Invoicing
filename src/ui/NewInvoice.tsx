@@ -79,6 +79,18 @@ export interface ScenarioTemplateData {
   };
 }
 
+/**
+ * The per-HS-code unit lookup.
+ *
+ * Failure is a state rather than a silent fallback: FBR rejects a mismatched unit with error 0099,
+ * so quietly offering all 44 units when the restriction could not be fetched hands the user a
+ * rejection instead of an explanation.
+ */
+type UomLookup =
+  | { status: "loading" }
+  | { status: "ready"; options: UnitOfMeasure[] }
+  | { status: "error"; message: string };
+
 interface Reference {
   provinces: Province[];
   hsCodes: HsCode[];
@@ -165,7 +177,7 @@ export function NewInvoice({
 
   const [items, setItems] = useState<ItemDraft[]>([blankItem()]);
   const [ratesByType, setRatesByType] = useState<Record<number, SaleTypeRate[]>>({});
-  const [uomByHs, setUomByHs] = useState<Record<string, UnitOfMeasure[]>>({});
+  const [uomByHs, setUomByHs] = useState<Record<string, UomLookup>>({});
 
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -206,13 +218,21 @@ export function NewInvoice({
       // Only ask once the code is complete. Firing on every keystroke sent FBR a request per
       // character — ten round-trips to type one code, each answered with an empty list.
       if (!account || !HS_CODE_PATTERN.test(hsCode) || uomByHs[hsCode]) return;
+
+      setUomByHs((current) => ({ ...current, [hsCode]: { status: "loading" } }));
       try {
         const { unitsOfMeasure } = await api.get<{ unitsOfMeasure: UnitOfMeasure[] }>(
           `/api/uom-for-hs?accountId=${account.id}&env=${env}&hsCode=${encodeURIComponent(hsCode)}`,
         );
-        setUomByHs((current) => ({ ...current, [hsCode]: unitsOfMeasure }));
-      } catch {
-        // Falls back to the full UoM list below.
+        setUomByHs((current) => ({
+          ...current,
+          [hsCode]: { status: "ready", options: unitsOfMeasure },
+        }));
+      } catch (e) {
+        setUomByHs((current) => ({
+          ...current,
+          [hsCode]: { status: "error", message: e instanceof Error ? e.message : String(e) },
+        }));
       }
     },
     [account, env, uomByHs],
@@ -331,6 +351,12 @@ export function NewInvoice({
         return { base, applied, saleTypeDesc: type?.transactioN_DESC ?? "", rates };
       }),
     [items, reference, ratesByType],
+  );
+
+  /** HS code -> description, so a typed code can be confirmed without another request. */
+  const hsIndex = useMemo(
+    () => new Map((reference?.hsCodes ?? []).map((h) => [h.hS_CODE, h.description])),
+    [reference],
   );
 
   const totals = useMemo(() => {
@@ -671,7 +697,10 @@ export function NewInvoice({
               item={item}
               computed={computed[index]!}
               reference={reference}
-              uomOptions={uomByHs[item.hsCode] ?? reference?.unitsOfMeasure ?? []}
+              uomLookup={uomByHs[item.hsCode.trim()]}
+              allUnits={reference?.unitsOfMeasure ?? []}
+              hsIndex={hsIndex}
+              referenceLoaded={reference !== null}
               removable={items.length > 1}
               fieldErrors={fieldErrors}
               onChange={(patch) => updateItem(item.key, patch)}
@@ -844,7 +873,10 @@ function ItemCard({
   item,
   computed,
   reference,
-  uomOptions,
+  uomLookup,
+  allUnits,
+  hsIndex,
+  referenceLoaded,
   removable,
   fieldErrors,
   onChange,
@@ -856,7 +888,10 @@ function ItemCard({
   item: ItemDraft;
   computed: { base: ReturnType<typeof computeLine>; applied: ReturnType<typeof computeLine>; rates: SaleTypeRate[] };
   reference: Reference | null;
-  uomOptions: UnitOfMeasure[];
+  uomLookup: UomLookup | undefined;
+  allUnits: UnitOfMeasure[];
+  hsIndex: Map<string, string>;
+  referenceLoaded: boolean;
   removable: boolean;
   fieldErrors: Set<string | null>;
   onChange: (patch: Partial<ItemDraft>) => void;
@@ -864,6 +899,45 @@ function ItemCard({
   onSaleTypeChosen: (transTypeId: number) => void;
   onHsCodeChosen: (hsCode: string) => void;
 }) {
+  const hsCode = item.hsCode.trim();
+  const hsComplete = HS_CODE_PATTERN.test(hsCode);
+  const hsDescription = hsComplete ? hsIndex.get(hsCode) : undefined;
+  /*
+   * Only question a code when we are holding FBR's real catalogue.
+   *
+   * In mock mode the list is a handful of fixtures, so every genuine code looks unknown — which is
+   * exactly how 2942.0000, a code from a successfully filed production invoice, got flagged. And
+   * even live this is a soft signal: the cached list can be stale, so it is styled as a doubt
+   * rather than in the red reserved for something FBR has actually rejected.
+   */
+  const hsUnknown =
+    hsComplete && referenceLoaded && !currentSession().mock && hsDescription === undefined;
+
+  /**
+   * Suggestions for the typed prefix, capped.
+   *
+   * The datalist previously held every code FBR publishes, per line item — 7,809 option elements
+   * each, for a list the browser truncates anyway.
+   */
+  const hsSuggestions = useMemo(() => {
+    const query = hsCode.replace(/\s/g, "");
+    if (query.length < 2) return [];
+    const matches: Array<{ hS_CODE: string; description: string }> = [];
+    for (const code of reference?.hsCodes ?? []) {
+      if (code.hS_CODE.startsWith(query)) matches.push(code);
+      if (matches.length === 25) break;
+    }
+    return matches;
+  }, [hsCode, reference]);
+
+  const restricted = uomLookup?.status === "ready" ? uomLookup.options : null;
+  const singleUnit = restricted?.length === 1 ? restricted[0]!.description : null;
+
+  // FBR usually permits exactly one unit for a code; filling it in is the whole point of asking.
+  useEffect(() => {
+    if (singleUnit && item.uoM === "") onChange({ uoM: singleUnit });
+  }, [singleUnit, item.uoM]);
+
   const isThirdSchedule = /3rd\s*schedule/i.test(
     reference?.transactionTypes.find((t) => t.transactioN_TYPE_ID === item.transTypeId)?.transactioN_DESC ?? "",
   );
@@ -886,9 +960,22 @@ function ItemCard({
 
       <div className="item-body">
       <div className="grid">
-        <Field label="HS code" span={3}>
+        <Field
+          label="HS code"
+          span={3}
+          hint={
+            hsUnknown
+              ? "Not in the HS code list FBR returned — worth double-checking."
+              : hsDescription
+                ? hsDescription
+                : "Type a full code, e.g. 2942.0000."
+          }
+          hintTone={hsUnknown ? "warn" : undefined}
+        >
           <input
-            className={fieldErrors.has("hsCode") ? "invalid" : undefined}
+            className={[fieldErrors.has("hsCode") ? "invalid" : "", hsUnknown ? "suspect" : ""]
+              .filter(Boolean)
+              .join(" ")}
             list={`hs-${item.key}`}
             value={item.hsCode}
             onChange={(e) => {
@@ -897,8 +984,13 @@ function ItemCard({
             }}
             placeholder="0101.2100"
           />
+          {/*
+            * Suggestions are filtered to what has been typed and capped. Emitting all 7,809 codes
+            * per line item put tens of thousands of nodes in the document for no benefit — the
+            * browser shows only a handful anyway.
+            */}
           <datalist id={`hs-${item.key}`}>
-            {reference?.hsCodes.map((h) => (
+            {hsSuggestions.map((h) => (
               <option key={h.hS_CODE} value={h.hS_CODE}>
                 {h.description}
               </option>
@@ -944,19 +1036,55 @@ function ItemCard({
         <Field
           label="Unit of measure"
           span={3}
-          hint={uomOptions.length > 0 ? "FBR restricts this per HS code." : undefined}
+          hint={
+            uomLookup?.status === "loading"
+              ? "Asking FBR which units this HS code allows…"
+              : uomLookup?.status === "error"
+                ? `Couldn't load the allowed units (${uomLookup.message}). Any unit FBR doesn't allow is rejected with error 0099.`
+                : restricted
+                  ? restricted.length === 1
+                    ? "The only unit FBR allows for this HS code."
+                    : `FBR allows ${restricted.length} units for this HS code.`
+                  : "Enter a full HS code to see which units FBR allows."
+          }
         >
-          <input
-            className={fieldErrors.has("uoM") ? "invalid" : undefined}
-            list={`uom-${item.key}`}
-            value={item.uoM}
-            onChange={(e) => onChange({ uoM: e.target.value })}
-          />
-          <datalist id={`uom-${item.key}`}>
-            {uomOptions.map((u) => (
-              <option key={u.uoM_ID} value={u.description} />
-            ))}
-          </datalist>
+          {/*
+            * A select once the restriction is known, because a datalist only suggests: it never
+            * constrains and never fills anything in, so a single allowed unit looked like nothing
+            * had happened at all.
+            */}
+          {restricted && restricted.length > 0 ? (
+            <select
+              className={fieldErrors.has("uoM") ? "invalid" : undefined}
+              value={item.uoM}
+              onChange={(e) => onChange({ uoM: e.target.value })}
+            >
+              <option value="">Choose…</option>
+              {restricted.map((u) => (
+                <option key={u.uoM_ID} value={u.description}>
+                  {u.description}
+                </option>
+              ))}
+              {/* Keep a value FBR no longer lists visible rather than silently dropping it. */}
+              {item.uoM !== "" && !restricted.some((u) => u.description === item.uoM) && (
+                <option value={item.uoM}>{item.uoM} (not allowed for this HS code)</option>
+              )}
+            </select>
+          ) : (
+            <>
+              <input
+                className={fieldErrors.has("uoM") ? "invalid" : undefined}
+                list={`uom-${item.key}`}
+                value={item.uoM}
+                onChange={(e) => onChange({ uoM: e.target.value })}
+              />
+              <datalist id={`uom-${item.key}`}>
+                {allUnits.map((u) => (
+                  <option key={u.uoM_ID} value={u.description} />
+                ))}
+              </datalist>
+            </>
+          )}
         </Field>
 
         <Field label="Description" wide>

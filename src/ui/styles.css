@@ -522,6 +522,18 @@ input.overridden {
   background: var(--danger-bg) !important;
 }
 
+/*
+ * Something we doubt, as opposed to something FBR has rejected. Reference lists can be stale, so
+ * amber keeps the red honest: red means FBR said no.
+ */
+input.suspect {
+  border-color: var(--warn-border);
+}
+
+.field-note.warn {
+  color: var(--warn-text);
+}
+
 /* ==========================================================================
    Buttons
    ========================================================================== */

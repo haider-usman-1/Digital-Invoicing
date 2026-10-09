@@ -174,7 +174,21 @@ export class FbrClient {
     hsCode: string,
     annexureId = 3,
   ): Promise<ReferenceCall<UnitOfMeasure[]>> {
-    if (this.mock) return { ok: true, data: MOCK_UOMS };
+    if (this.mock) {
+      /*
+       * A restriction, not the whole list.
+       *
+       * Returning every unit made the mock useless for the case that matters: FBR permits exactly
+       * one unit for most HS codes, and that is the case the UI has to handle well. Derived from
+       * the code so a given code answers the same way every run.
+       */
+      const lastDigit = Number(hsCode.replace(/\D/g, "").slice(-1) || 0);
+      const picks =
+        lastDigit % 3 === 2
+          ? MOCK_UOMS.filter((u) => ["KG", "Litre", "Numbers, pieces, units"].includes(u.description))
+          : MOCK_UOMS.filter((u) => u.description === (lastDigit % 3 === 0 ? "KG" : "Numbers, pieces, units"));
+      return { ok: true, data: picks };
+    }
     const url = new URL(REFERENCE_ENDPOINTS.hsCodeUom);
     url.searchParams.set("hs_code", hsCode);
     url.searchParams.set("annexure_id", String(annexureId));

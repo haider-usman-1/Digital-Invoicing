@@ -14,6 +14,11 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+/*
+ * This launches its OWN headless Chrome against a throwaway profile directory, so it never touches
+ * the browser you are using. Shut it down by PID only — never by name. `pkill -f "Google Chrome"`
+ * closes every window the user has open, which is an expensive way to take a screenshot.
+ */
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const outDir = process.argv[2] ?? "/tmp/shots";
 const portIndex = process.argv.indexOf("--port");
@@ -139,10 +144,36 @@ const SHOTS: Shot[] = [
     prepare: `[...document.querySelectorAll('button')]
       .find((b) => b.textContent?.includes('Check without filing'))?.click()`,
   },
+  {
+    name: "02b-hs-lookup",
+    // A real code, from an invoice FBR actually accepted — shows the description and the unit
+    // restriction returned for it.
+    prepare: `(() => {
+      const input = document.querySelector('input[list^="hs-"]');
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setValue.call(input, '2942.0000');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`,
+  },
   { name: "03-scenarios", tab: "Scenario testing" },
   { name: "04-needs-checking", tab: "Needs checking" },
   { name: "05-settings", tab: "Settings" },
 ];
+
+/** Only ever the instance this script started. */
+function shutdown(): void {
+  try {
+    chrome.kill();
+  } catch {
+    // Already gone.
+  }
+}
+
+process.on("exit", shutdown);
+process.on("SIGINT", () => {
+  shutdown();
+  process.exit(130);
+});
 
 await waitForDevTools();
 
@@ -163,6 +194,7 @@ const wanted = process.argv.includes("--light") ? "Light theme" : "Dark theme";
 await page.evaluate(`document.querySelector('[aria-label=${JSON.stringify(wanted)}]')?.click()`);
 await Bun.sleep(400);
 
+try {
 for (const shot of SHOTS) {
   if (shot.tab) {
     const clicked = await page.clickText(shot.tab);
@@ -184,6 +216,8 @@ for (const shot of SHOTS) {
   console.log(`  ${shot.name}.png`);
 }
 
-page.close();
-chrome.kill();
+} finally {
+  page.close();
+  shutdown();
+}
 await Bun.sleep(300);

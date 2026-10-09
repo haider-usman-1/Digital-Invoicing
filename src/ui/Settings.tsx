@@ -280,12 +280,15 @@ function withControlId(children: React.ReactNode, id: string): React.ReactNode {
 export function Field({
   label,
   hint,
+  hintTone,
   span,
   wide,
   children,
 }: {
   label: string;
   hint?: string | undefined;
+  /** Marks the hint as a doubt rather than guidance. */
+  hintTone?: "warn" | undefined;
   /** Columns out of 12. Defaults to 3, i.e. four per row. */
   span?: 2 | 3 | 4 | 6;
   /** Full row, for free text that routinely runs long. */
@@ -299,7 +302,7 @@ export function Field({
     <div className={`field ${width}`.trim()}>
       <label htmlFor={id}>{label}</label>
       {withControlId(children, id)}
-      {hint && <span className="field-note">{hint}</span>}
+      {hint && <span className={hintTone ? `field-note ${hintTone}` : "field-note"}>{hint}</span>}
     </div>
   );
 }
