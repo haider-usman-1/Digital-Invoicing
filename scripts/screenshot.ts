@@ -23,6 +23,8 @@ const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const outDir = process.argv[2] ?? "/tmp/shots";
 const portIndex = process.argv.indexOf("--port");
 const appPort = portIndex > -1 ? Number(process.argv[portIndex + 1]) : 7345;
+const widthIndex = process.argv.indexOf("--width");
+const width = widthIndex > -1 ? Number(process.argv[widthIndex + 1]) : 1600;
 const DEBUG_PORT = 9333;
 
 mkdirSync(outDir, { recursive: true });
@@ -33,7 +35,7 @@ const chrome = Bun.spawn(
     "--headless=new",
     `--remote-debugging-port=${DEBUG_PORT}`,
     "--user-data-dir=/tmp/chrome-shot-profile",
-    "--window-size=1600,1000",
+    `--window-size=${width},1000`,
     "--force-device-scale-factor=1",
     "--hide-scrollbars",
     "--no-first-run",

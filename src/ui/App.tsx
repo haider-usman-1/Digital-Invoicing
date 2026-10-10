@@ -85,7 +85,7 @@ export function App() {
       <div className="topbar">
         <span className="brand">
           <img src={iconFor(resolved)} width={18} height={18} alt="" />
-          FBR Invoicing
+          <span>FBR Invoicing</span>
         </span>
 
         <nav className="tabs">
@@ -95,6 +95,7 @@ export function App() {
         <div className="topbar-right">
           {accounts.length > 0 && (
             <select
+              className="account"
               aria-label="Seller account"
               value={accountId ?? ""}
               onChange={(e) => setAccountId(e.target.value)}

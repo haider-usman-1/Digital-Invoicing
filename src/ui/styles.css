@@ -156,12 +156,19 @@ p {
   flex-direction: column;
 }
 
+/*
+ * Wraps rather than overflowing.
+ *
+ * A fixed height and no wrapping meant the account picker, environment and Quit simply ran off the
+ * right edge on a narrower window — unreachable, with no scrollbar to find them by.
+ */
 .topbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--s5);
-  height: 48px;
-  padding: 0 var(--s6);
+  gap: var(--s3) var(--s5);
+  min-height: 48px;
+  padding: var(--s2) var(--s6);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   position: sticky;
@@ -181,6 +188,15 @@ p {
 .tabs {
   display: flex;
   gap: var(--s1);
+  /* Takes the slack, and scrolls rather than pushing the controls off the edge. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
@@ -211,7 +227,37 @@ p {
   margin-left: auto;
   display: flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: var(--s3);
+}
+
+/*
+ * Account names are real business names, and the global `min-width: 0` on controls let this one be
+ * squeezed to a stub. A floor keeps it readable; the cap stops a long name crowding everything else.
+ */
+.topbar select {
+  min-width: 118px;
+}
+
+.topbar select.account {
+  min-width: 190px;
+  max-width: 280px;
+}
+
+/* Below this the brand wordmark is the first thing worth losing; the mark still identifies it. */
+@media (max-width: 760px) {
+  .brand span {
+    display: none;
+  }
+
+  .topbar {
+    gap: var(--s2) var(--s4);
+    padding: var(--s2) var(--s4);
+  }
+}
+
+.env-banner {
+  flex-wrap: wrap;
 }
 
 .content {
